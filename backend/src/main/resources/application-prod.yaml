@@ -1,0 +1,61 @@
+# Production profile.
+#
+# Deliberately imports no .env: secrets come from the environment or a secret
+# manager (§29). Every value below must be supplied; there are no fallbacks for
+# anything sensitive, so a missing secret fails startup instead of silently
+# running with a default.
+
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    # Never let an unexpected schema state be "fixed" automatically in prod.
+    baseline-on-migrate: false
+    clean-disabled: true
+
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+
+server:
+  # Behind a reverse proxy: honour X-Forwarded-* so redirects and logged client
+  # addresses are the real ones rather than the proxy's.
+  forward-headers-strategy: framework
+  shutdown: graceful
+  tomcat:
+    max-http-form-post-size: 2MB
+
+springdoc:
+  # The contract is published from CI, not served from production.
+  api-docs:
+    enabled: ${OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${OPENAPI_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+elearning:
+  maintenance:
+    # Safe to leave on with several instances: the sweeps take a PostgreSQL
+    # advisory lock, so only one instance does the work.
+    enabled: ${MAINTENANCE_ENABLED:true}
+
+logging:
+  level:
+    root: INFO
+    com.elearning: INFO
+    org.hibernate.orm.jdbc.bind: OFF

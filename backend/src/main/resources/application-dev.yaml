@@ -1,0 +1,56 @@
+# Local development against the Docker Compose stack (backend/docker-compose.yml).
+# Ports match the compose defaults; credentials still come from the environment.
+#
+# backend/.env is imported automatically, so ./gradlew bootRun works with no
+# extra setup. Real environment variables still win over anything in .env.
+
+spring:
+  # Required (no 'optional:' prefix) on purpose: if .env is missing, Spring binds
+  # the literal '${POSTGRES_PASSWORD}' as the password and the app fails with a
+  # misleading "password authentication failed". Failing here names the real cause.
+  config:
+    import: file:./.env[.properties]
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:${POSTGRES_PORT:5433}/${POSTGRES_DB:elearning}}
+    username: ${POSTGRES_USER:elearning}
+    password: ${POSTGRES_PASSWORD}
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USER:elearning}
+    password: ${RABBITMQ_PASSWORD}
+
+  mail:
+    # Mailpit accepts anything and delivers nothing. UI: http://localhost:8026
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:${MAILPIT_SMTP_PORT:1026}}
+
+elearning:
+  storage:
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:${MINIO_API_PORT:9100}}
+    access-key: ${MINIO_ROOT_USER:elearning}
+    secret-key: ${MINIO_ROOT_PASSWORD}
+    path-style-access: true
+
+springdoc:
+  swagger-ui:
+    try-it-out-enabled: true
+
+logging:
+  level:
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.flywaydb: DEBUG
