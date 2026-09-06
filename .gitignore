@@ -1,0 +1,17 @@
+# Root-level ignores. The backend and dashboard each keep their own .gitignore
+# for tooling specific to them; this covers what sits above both.
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Secrets never belong in the repository. Both projects ignore their own .env
+# as well; this is the belt to that pair of braces.
+.env
+.env.*
+!.env.example
+
+# Local Claude Code state
+.claude/

@@ -1,0 +1,102 @@
+plugins {
+	id 'org.jetbrains.kotlin.jvm' version '2.3.21'
+	id 'org.jetbrains.kotlin.plugin.spring' version '2.3.21'
+	id 'org.springframework.boot' version '4.1.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.jetbrains.kotlin.plugin.jpa' version '2.3.21'
+}
+
+group = 'com.elearning'
+version = '0.0.1-SNAPSHOT'
+
+ext {
+	springdocVersion = '3.1.0'
+	awsSdkVersion = '2.54.13'
+	mockkVersion = '1.14.11'
+	pdfboxVersion = '3.0.8'
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// --- Web / API ---
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// --- OpenAPI / Swagger UI (springdoc 3.x targets Spring Boot 4) ---
+	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
+	// --- Security ---
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+
+	// --- Persistence ---
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// --- Cache / messaging / mail ---
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+	// --- Certificate rendering ---
+	implementation "org.apache.pdfbox:pdfbox:${pdfboxVersion}"
+
+	// --- Object storage (S3-compatible: MinIO locally, S3 in production) ---
+	implementation platform("software.amazon.awssdk:bom:${awsSdkVersion}")
+	implementation 'software.amazon.awssdk:s3'
+
+	// --- Kotlin ---
+	implementation 'org.jetbrains.kotlin:kotlin-reflect'
+	implementation 'tools.jackson.module:jackson-module-kotlin'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// --- Test ---
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server-test'
+	testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
+	testImplementation "io.mockk:mockk:${mockkVersion}"
+	// Async delivery means asserting on eventual state, not immediate state.
+	testImplementation 'org.awaitility:awaitility'
+
+	// Real PostgreSQL/Redis/RabbitMQ/MinIO in integration tests (AGENTS.md §26).
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	testImplementation 'org.testcontainers:testcontainers-rabbitmq'
+	testImplementation 'org.testcontainers:testcontainers-minio'
+
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+kotlin {
+	compilerOptions {
+		freeCompilerArgs.addAll '-Xjsr305=strict', '-Xannotation-default-target=param-property'
+	}
+}
+
+allOpen {
+	annotation 'jakarta.persistence.Entity'
+	annotation 'jakarta.persistence.MappedSuperclass'
+	annotation 'jakarta.persistence.Embeddable'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
