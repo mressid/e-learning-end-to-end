@@ -1,0 +1,446 @@
+erDiagram
+
+    USERS {
+        uuid id PK
+        string email UK
+        string username UK
+        string password_hash
+        string status
+        timestamp created_at
+        timestamp updated_at
+        timestamp last_login_at
+    }
+
+    USER_PROFILES {
+        uuid user_id PK, FK
+        string first_name
+        string last_name
+        text bio
+        uuid avatar_media_id FK
+        string timezone
+        string language
+    }
+
+    COURSES {
+        uuid id PK
+        uuid owner_id FK
+        string title
+        string slug UK
+        text description
+        text short_description
+        string status
+        string level
+        string language
+        uuid thumbnail_media_id FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp published_at
+    }
+
+    COURSE_INSTRUCTORS {
+        uuid course_id PK, FK
+        uuid instructor_id PK, FK
+        string role
+    }
+
+    COURSE_SECTIONS {
+        uuid id PK
+        uuid course_id FK
+        string title
+        text description
+        int position
+    }
+
+    COURSE_ITEMS {
+        uuid id PK
+        uuid section_id FK
+        string title
+        string type
+        int position
+        boolean is_required
+        timestamp available_from
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    LESSONS {
+        uuid course_item_id PK, FK
+        string content_type
+        text description
+        int duration_seconds
+        string completion_rule
+    }
+
+    VIDEO_CONTENTS {
+        uuid lesson_id PK, FK
+        uuid media_id FK
+        uuid thumbnail_media_id FK
+        uuid hls_manifest_media_id FK
+        int duration_seconds
+    }
+
+    ARTICLE_CONTENTS {
+        uuid lesson_id PK, FK
+        text content
+    }
+
+    DOCUMENT_CONTENTS {
+        uuid lesson_id PK, FK
+        uuid media_id FK
+    }
+
+    ENROLLMENTS {
+        uuid id PK
+        uuid student_id FK
+        uuid course_id FK
+        string status
+        timestamp enrolled_at
+        timestamp started_at
+        timestamp completed_at
+        timestamp expires_at
+    }
+
+    LEARNING_PROGRESS {
+        uuid id PK
+        uuid student_id FK
+        uuid course_id FK
+        uuid course_item_id FK
+        string status
+        decimal progress_percent
+        int last_position_seconds
+        timestamp started_at
+        timestamp completed_at
+        timestamp updated_at
+    }
+
+    QUIZZES {
+        uuid course_item_id PK, FK
+        string title
+        text instructions
+        decimal passing_score
+        int max_attempts
+        int time_limit_seconds
+        boolean randomize_questions
+    }
+
+    QUESTIONS {
+        uuid id PK
+        uuid quiz_id FK
+        string type
+        text text
+        decimal points
+        int position
+    }
+
+    QUESTION_OPTIONS {
+        uuid id PK
+        uuid question_id FK
+        text text
+        boolean is_correct
+        int position
+    }
+
+    QUIZ_ATTEMPTS {
+        uuid id PK
+        uuid quiz_id FK
+        uuid student_id FK
+        int attempt_number
+        string status
+        decimal score
+        timestamp started_at
+        timestamp submitted_at
+        timestamp graded_at
+    }
+
+    QUIZ_RESPONSES {
+        uuid id PK
+        uuid attempt_id FK
+        uuid question_id FK
+        uuid selected_option_id FK
+        text answer_text
+        boolean is_correct
+        decimal points_awarded
+    }
+
+    ASSIGNMENTS {
+        uuid course_item_id PK, FK
+        text instructions
+        decimal max_score
+        timestamp due_at
+        boolean allow_late_submission
+    }
+
+    ASSIGNMENT_SUBMISSIONS {
+        uuid id PK
+        uuid assignment_id FK
+        uuid student_id FK
+        int attempt_number
+        string status
+        text content
+        decimal score
+        text feedback
+        timestamp submitted_at
+        timestamp graded_at
+        uuid graded_by FK
+    }
+
+    SUBMISSION_MEDIA {
+        uuid submission_id PK, FK
+        uuid media_id PK, FK
+    }
+
+    MEDIA_OBJECTS {
+        uuid id PK
+        string bucket
+        string object_key
+        string original_filename
+        string mime_type
+        bigint size_bytes
+        string checksum
+        string status
+        timestamp created_at
+    }
+
+    RESOURCES {
+        uuid id PK
+        string title
+        text description
+        string resource_type
+        string source_type
+        uuid created_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    RESOURCE_FILES {
+        uuid resource_id PK, FK
+        uuid media_id FK
+        string filename
+        string mime_type
+        string extension
+        bigint size_bytes
+    }
+
+    RESOURCE_URLS {
+        uuid resource_id PK, FK
+        string url
+    }
+
+    RESOURCE_CONTENTS {
+        uuid resource_id PK, FK
+        string content_type
+        text content
+    }
+
+    COURSE_RESOURCES {
+        uuid course_id PK, FK
+        uuid resource_id PK, FK
+        string relationship_type
+        int position
+    }
+
+    SECTION_RESOURCES {
+        uuid section_id PK, FK
+        uuid resource_id PK, FK
+        string relationship_type
+        int position
+    }
+
+    ITEM_RESOURCES {
+        uuid course_item_id PK, FK
+        uuid resource_id PK, FK
+        string relationship_type
+        int position
+    }
+
+    CERTIFICATES {
+        uuid id PK
+        uuid student_id FK
+        uuid course_id FK
+        uuid media_id FK
+        string certificate_number UK
+        string verification_code UK
+        timestamp issued_at
+        timestamp revoked_at
+    }
+
+    DISCUSSION_THREADS {
+        uuid id PK
+        uuid course_id FK
+        uuid lesson_id FK
+        uuid author_id FK
+        string title
+        text body
+        string status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    DISCUSSION_COMMENTS {
+        uuid id PK
+        uuid thread_id FK
+        uuid author_id FK
+        uuid parent_id FK
+        text body
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    COURSE_REVIEWS {
+        uuid id PK
+        uuid course_id FK
+        uuid student_id FK
+        int rating
+        string title
+        text body
+        string status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CATEGORIES {
+        uuid id PK
+        uuid parent_id FK
+        string name
+        string slug UK
+    }
+
+    COURSE_CATEGORIES {
+        uuid course_id PK, FK
+        uuid category_id PK, FK
+    }
+
+    TAGS {
+        uuid id PK
+        string name
+        string slug UK
+    }
+
+    COURSE_TAGS {
+        uuid course_id PK, FK
+        uuid tag_id PK, FK
+    }
+
+    COURSE_PREREQUISITES {
+        uuid course_id PK, FK
+        uuid prerequisite_course_id PK, FK
+    }
+
+    ITEM_PREREQUISITES {
+        uuid item_id PK, FK
+        uuid prerequisite_item_id PK, FK
+    }
+
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK
+        string type
+        string title
+        text body
+        jsonb data
+        timestamp read_at
+        timestamp created_at
+    }
+
+    NOTIFICATION_DELIVERIES {
+        uuid id PK
+        uuid notification_id FK
+        string channel
+        string status
+        timestamp sent_at
+        text failure_reason
+    }
+
+
+    USERS ||--|| USER_PROFILES : has
+
+    USERS ||--o{ COURSES : owns
+
+    COURSES ||--o{ COURSE_INSTRUCTORS : has
+    USERS ||--o{ COURSE_INSTRUCTORS : teaches
+
+    COURSES ||--o{ COURSE_SECTIONS : contains
+    COURSE_SECTIONS ||--o{ COURSE_ITEMS : contains
+
+    COURSE_ITEMS ||--o| LESSONS : "is lesson"
+    COURSE_ITEMS ||--o| QUIZZES : "is quiz"
+    COURSE_ITEMS ||--o| ASSIGNMENTS : "is assignment"
+
+    LESSONS ||--o| VIDEO_CONTENTS : contains
+    LESSONS ||--o| ARTICLE_CONTENTS : contains
+    LESSONS ||--o| DOCUMENT_CONTENTS : contains
+
+    USERS ||--o{ ENROLLMENTS : makes
+    COURSES ||--o{ ENROLLMENTS : receives
+
+    USERS ||--o{ LEARNING_PROGRESS : tracks
+    COURSES ||--o{ LEARNING_PROGRESS : tracks
+    COURSE_ITEMS ||--o{ LEARNING_PROGRESS : tracks
+
+    QUIZZES ||--o{ QUESTIONS : contains
+    QUESTIONS ||--o{ QUESTION_OPTIONS : has
+
+    QUIZZES ||--o{ QUIZ_ATTEMPTS : receives
+    USERS ||--o{ QUIZ_ATTEMPTS : makes
+
+    QUIZ_ATTEMPTS ||--o{ QUIZ_RESPONSES : contains
+    QUESTIONS ||--o{ QUIZ_RESPONSES : answers
+    QUESTION_OPTIONS ||--o{ QUIZ_RESPONSES : selected
+
+    ASSIGNMENTS ||--o{ ASSIGNMENT_SUBMISSIONS : receives
+    USERS ||--o{ ASSIGNMENT_SUBMISSIONS : submits
+    USERS ||--o{ ASSIGNMENT_SUBMISSIONS : grades
+
+    ASSIGNMENT_SUBMISSIONS ||--o{ SUBMISSION_MEDIA : attaches
+    MEDIA_OBJECTS ||--o{ SUBMISSION_MEDIA : attached
+
+    MEDIA_OBJECTS ||--o{ VIDEO_CONTENTS : video
+    MEDIA_OBJECTS ||--o{ DOCUMENT_CONTENTS : document
+    MEDIA_OBJECTS ||--o{ CERTIFICATES : certificate
+
+    USERS ||--o{ RESOURCES : creates
+
+    RESOURCES ||--o| RESOURCE_FILES : stores
+    RESOURCES ||--o| RESOURCE_URLS : links
+    RESOURCES ||--o| RESOURCE_CONTENTS : contains
+
+    MEDIA_OBJECTS ||--o{ RESOURCE_FILES : stores
+
+    COURSES ||--o{ COURSE_RESOURCES : has
+    RESOURCES ||--o{ COURSE_RESOURCES : attached
+
+    COURSE_SECTIONS ||--o{ SECTION_RESOURCES : has
+    RESOURCES ||--o{ SECTION_RESOURCES : attached
+
+    COURSE_ITEMS ||--o{ ITEM_RESOURCES : has
+    RESOURCES ||--o{ ITEM_RESOURCES : attached
+
+    USERS ||--o{ CERTIFICATES : receives
+    COURSES ||--o{ CERTIFICATES : awards
+
+    COURSES ||--o{ DISCUSSION_THREADS : contains
+    LESSONS ||--o{ DISCUSSION_THREADS : discusses
+    USERS ||--o{ DISCUSSION_THREADS : creates
+
+    DISCUSSION_THREADS ||--o{ DISCUSSION_COMMENTS : contains
+    USERS ||--o{ DISCUSSION_COMMENTS : writes
+    DISCUSSION_COMMENTS ||--o{ DISCUSSION_COMMENTS : replies
+
+    COURSES ||--o{ COURSE_REVIEWS : receives
+    USERS ||--o{ COURSE_REVIEWS : writes
+
+    CATEGORIES ||--o{ CATEGORIES : parent
+    COURSES ||--o{ COURSE_CATEGORIES : categorized
+    CATEGORIES ||--o{ COURSE_CATEGORIES : contains
+
+    COURSES ||--o{ COURSE_TAGS : tagged
+    TAGS ||--o{ COURSE_TAGS : contains
+
+    COURSES ||--o{ COURSE_PREREQUISITES : requires
+    COURSES ||--o{ COURSE_PREREQUISITES : prerequisite
+
+    COURSE_ITEMS ||--o{ ITEM_PREREQUISITES : requires
+    COURSE_ITEMS ||--o{ ITEM_PREREQUISITES : prerequisite
+
+    USERS ||--o{ NOTIFICATIONS : receives
+    NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : delivered
