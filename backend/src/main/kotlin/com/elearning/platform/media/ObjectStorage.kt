@@ -1,0 +1,51 @@
+package com.elearning.platform.media
+
+import java.net.URI
+import java.time.Duration
+
+/**
+ * Object storage, as the rest of the application sees it.
+ *
+ * Business modules depend on this, never on the S3 SDK (§17). Large files never
+ * pass through the application: clients upload and download directly against
+ * storage using short-lived presigned URLs, which is why the app's own multipart
+ * limit is small.
+ */
+interface ObjectStorage {
+
+    /** A URL the client may PUT the file to, valid for [ttl]. */
+    fun presignedUpload(bucket: String, key: String, contentType: String, ttl: Duration): URI
+
+    /** A URL the client may GET the file from, valid for [ttl]. */
+    fun presignedDownload(bucket: String, key: String, ttl: Duration): URI
+
+    /**
+     * Uploads bytes the application generated itself, such as a rendered
+     * certificate. Presigned URLs are for content that comes from a client;
+     * there is no client here.
+     */
+    fun put(bucket: String, key: String, bytes: ByteArray, contentType: String)
+
+    /**
+     * A stable, unsigned URL for an object in a publicly readable bucket.
+     *
+     * Presigned URLs expire, which makes them useless for something a browser
+     * should cache - a course thumbnail on a listing page, say.
+     */
+    fun publicUrl(bucket: String, key: String): URI
+
+    /** Size and checksum, or null when the object is not present. */
+    fun statOf(bucket: String, key: String): StoredObject?
+
+    fun delete(bucket: String, key: String)
+}
+
+/**
+ * What storage knows about an object.
+ *
+ * `checksum` is the ETag. For a single-part upload that is the MD5 of the
+ * content; for a multipart upload S3 returns a composite value instead, so it
+ * is an integrity marker to compare against later, not a content hash to
+ * recompute independently.
+ */
+data class StoredObject(val sizeBytes: Long, val checksum: String?)
