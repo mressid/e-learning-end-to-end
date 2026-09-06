@@ -1,0 +1,148 @@
+# Local development infrastructure for the E-Learning backend.
+#
+# Host ports are deliberately shifted away from the defaults so this stack can
+# run alongside other local Postgres/Redis/MinIO instances. Override any of them
+# in .env (see .env.example).
+#
+#   docker compose up -d
+
+name: elearning
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: elearning-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-elearning}
+      POSTGRES_USER: ${POSTGRES_USER:-elearning}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Deterministic collation so index behaviour matches CI/prod.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-elearning} -d ${POSTGRES_DB:-elearning}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [elearning]
+
+  redis:
+    image: redis:7-alpine
+    container_name: elearning-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [elearning]
+
+  minio:
+    image: minio/minio:latest
+    container_name: elearning-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-elearning}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9100}:9000"      # S3 API
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9101}:9001"  # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [elearning]
+
+  # One-shot: creates the buckets the media module expects, then exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: elearning-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-elearning}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MEDIA_BUCKET: ${MINIO_MEDIA_BUCKET:-elearning}
+      PUBLIC_BUCKET: ${MINIO_PUBLIC_BUCKET:-elearning-public}
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+        mc mb --ignore-existing local/\"$$MEDIA_BUCKET\" &&
+        mc mb --ignore-existing local/\"$$PUBLIC_BUCKET\" &&
+        mc anonymous set download local/\"$$PUBLIC_BUCKET\" &&
+        echo 'minio buckets ready'
+      "
+    restart: "no"
+    networks: [elearning]
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: elearning-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-elearning}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5673}:5672"             # AMQP
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15673}:15672" # management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks: [elearning]
+
+  # Dev SMTP sink: the app sends mail here instead of a real provider.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: elearning-mailpit
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1026}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8026}:8025"
+    networks: [elearning]
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  rabbitmq-data:
+
+networks:
+  elearning:
+    driver: bridge

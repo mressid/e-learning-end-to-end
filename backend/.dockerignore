@@ -1,0 +1,10 @@
+# Keep the build context small and secrets out of the image entirely.
+.env
+.git
+.gradle
+.idea
+build
+*.log
+desgin
+PROGRESS.md
+HELP.md
