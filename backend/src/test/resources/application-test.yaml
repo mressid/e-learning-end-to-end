@@ -1,0 +1,56 @@
+# Test profile. Deliberately does NOT import .env: the database comes from
+# Testcontainers via @ServiceConnection, and everything else is stubbed so the
+# suite runs unchanged in CI where no .env and no compose stack exist.
+
+spring:
+  datasource:
+    # Overridden at runtime by @ServiceConnection; present so placeholder
+    # resolution in the base configuration has something to bind to.
+    url: jdbc:postgresql://localhost:5432/placeholder
+    username: placeholder
+    password: placeholder
+
+  jpa:
+    show-sql: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: placeholder
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: placeholder
+    password: placeholder
+
+  mail:
+    host: localhost
+    port: 1025
+
+elearning:
+  identity:
+    # Off for the suite at large: every test that needs an authenticated caller
+    # registers and logs in, and threading a verification click through ~15
+    # helpers would test the mail flow fifteen times and the actual subject
+    # once. `EmailVerificationApiTest` turns it back on and drives the real
+    # thing end to end, including the login gate.
+    require-email-verification: false
+  maintenance:
+    # Sweeps are invoked directly in tests; a background schedule would mutate
+    # rows underneath assertions.
+    enabled: false
+  security:
+    jwt:
+      # Test-only value. Long enough for HS256; never used outside tests.
+      secret: test-secret-test-secret-test-secret-0123456789
+  storage:
+    endpoint: http://localhost:9000
+    access-key: placeholder
+    secret-key: placeholder
+
+logging:
+  level:
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN
