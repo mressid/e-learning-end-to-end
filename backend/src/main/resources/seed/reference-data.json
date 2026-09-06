@@ -1,0 +1,206 @@
+{
+  "_comment": [
+    "Reference data the application seeds on startup, idempotently.",
+    "Adding an entry here creates it; editing one updates its name or",
+    "description. Removing one does NOT delete the row -- a category may",
+    "already be attached to courses, and a permission may already be held",
+    "by a role, so deleting on absence would silently strip live data."
+  ],
+  "categories": [
+    {
+      "slug": "development",
+      "name": "Development",
+      "children": [
+        {
+          "slug": "web-development",
+          "name": "Web Development"
+        },
+        {
+          "slug": "mobile-development",
+          "name": "Mobile Development"
+        },
+        {
+          "slug": "programming-languages",
+          "name": "Programming Languages"
+        },
+        {
+          "slug": "game-development",
+          "name": "Game Development"
+        }
+      ]
+    },
+    {
+      "slug": "business",
+      "name": "Business",
+      "children": [
+        {
+          "slug": "entrepreneurship",
+          "name": "Entrepreneurship"
+        },
+        {
+          "slug": "management",
+          "name": "Management"
+        },
+        {
+          "slug": "finance-accounting",
+          "name": "Finance & Accounting"
+        }
+      ]
+    },
+    {
+      "slug": "design",
+      "name": "Design",
+      "children": [
+        {
+          "slug": "graphic-design",
+          "name": "Graphic Design"
+        },
+        {
+          "slug": "ux-ui-design",
+          "name": "UX & UI Design"
+        }
+      ]
+    },
+    {
+      "slug": "data-science",
+      "name": "Data Science",
+      "children": [
+        {
+          "slug": "machine-learning",
+          "name": "Machine Learning"
+        },
+        {
+          "slug": "data-analysis",
+          "name": "Data Analysis"
+        }
+      ]
+    },
+    {
+      "slug": "it-software",
+      "name": "IT & Software",
+      "children": [
+        {
+          "slug": "cloud-computing",
+          "name": "Cloud Computing"
+        },
+        {
+          "slug": "cyber-security",
+          "name": "Cyber Security"
+        },
+        {
+          "slug": "networking",
+          "name": "Networking"
+        }
+      ]
+    },
+    {
+      "slug": "marketing",
+      "name": "Marketing",
+      "children": [
+        {
+          "slug": "digital-marketing",
+          "name": "Digital Marketing"
+        },
+        {
+          "slug": "content-marketing",
+          "name": "Content Marketing"
+        }
+      ]
+    },
+    {
+      "slug": "personal-development",
+      "name": "Personal Development",
+      "children": [
+        {
+          "slug": "productivity",
+          "name": "Productivity"
+        },
+        {
+          "slug": "leadership",
+          "name": "Leadership"
+        }
+      ]
+    },
+    {
+      "slug": "languages",
+      "name": "Languages",
+      "children": []
+    }
+  ],
+  "permissions": [
+    {
+      "code": "course.read",
+      "description": "View any course, including drafts"
+    },
+    {
+      "code": "course.write",
+      "description": "Edit any course and its structure"
+    },
+    {
+      "code": "course.publish",
+      "description": "Publish, unpublish or archive any course"
+    },
+    {
+      "code": "course.delete",
+      "description": "Delete sections and items of any course"
+    },
+    {
+      "code": "category.manage",
+      "description": "Manage the category and tag taxonomy"
+    },
+    {
+      "code": "user.read",
+      "description": "View the student and instructor directories"
+    },
+    {
+      "code": "user.suspend",
+      "description": "Suspend or reinstate a learner account"
+    },
+    {
+      "code": "certificate.read",
+      "description": "View any issued certificate"
+    },
+    {
+      "code": "certificate.revoke",
+      "description": "Revoke any certificate"
+    },
+    {
+      "code": "submission.read",
+      "description": "View any assignment submission or quiz attempt"
+    },
+    {
+      "code": "review.moderate",
+      "description": "Moderate reviews on any course"
+    },
+    {
+      "code": "discussion.moderate",
+      "description": "Moderate discussion threads on any course"
+    },
+    {
+      "code": "media.read",
+      "description": "Browse the central media library"
+    },
+    {
+      "code": "media.delete",
+      "description": "Delete media objects"
+    },
+    {
+      "code": "settings.manage",
+      "description": "View and end active sessions, and change platform settings"
+    },
+    {
+      "code": "audit.read",
+      "description": "Read the audit trail"
+    }
+  ],
+  "roles": [
+    {
+      "slug": "super-admin",
+      "name": "Super Admin",
+      "description": "Every permission, including ones added later",
+      "isSuper": true,
+      "isSystem": true,
+      "permissions": []
+    }
+  ]
+}
