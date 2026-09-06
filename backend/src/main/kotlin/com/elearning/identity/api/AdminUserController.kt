@@ -1,0 +1,136 @@
+package com.elearning.identity.api
+
+import com.elearning.identity.application.UserDirectoryService
+import com.elearning.identity.domain.User
+import com.elearning.identity.domain.UserProfile
+import com.elearning.identity.domain.UserStatus
+import com.elearning.shared.api.OpenApiConfig
+import com.elearning.shared.api.PageResponse
+import com.elearning.shared.errors.ApiError
+import com.elearning.shared.errors.BusinessRuleException
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
+import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
+import io.swagger.v3.oas.annotations.Parameter
+import jakarta.validation.constraints.NotBlank
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
+import java.util.UUID
+
+@Schema(name = "DirectoryUserResponse")
+data class DirectoryUserResponse(
+    val id: UUID,
+    val email: String,
+    val username: String,
+    val status: String,
+    val displayName: String?,
+    val createdAt: Instant,
+    val lastLoginAt: Instant?,
+) {
+    companion object {
+        fun of(user: User, profile: UserProfile?) = DirectoryUserResponse(
+            id = requireNotNull(user.id),
+            email = user.email,
+            username = user.username,
+            status = user.status.name,
+            displayName = profile?.displayName,
+            createdAt = user.createdAt,
+            lastLoginAt = user.lastLoginAt,
+        )
+    }
+}
+
+@Schema(name = "SetUserStatusRequest")
+data class SetUserStatusRequest(
+    @field:NotBlank
+    @get:Schema(allowableValues = ["ACTIVE", "SUSPENDED", "DISABLED"])
+    val status: String,
+)
+
+/**
+ * The learner directory, for the dashboard's `/students` page.
+ *
+ * Served from `identity` rather than the `admin` module: the data belongs here,
+ * and moving it would make `admin` depend on every module that owns something a
+ * dashboard renders (§8). The `/api/v1/admin` prefix is a URL namespace, not a
+ * statement about which module answers.
+ */
+@RestController
+@RequestMapping("/api/v1/admin/users")
+@Tag(name = "Admin: users", description = "The learner directory")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
+class AdminUserController(private val directory: UserDirectoryService) {
+
+    @GetMapping
+    @Operation(
+        summary = "List or search learners",
+        description = "Requires `user.read`. Pass `q` to match an email or username, " +
+            "or `status` to filter; `q` wins if both are given.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "A page of users"),
+        ApiResponse(
+            responseCode = "403",
+            description = "The caller lacks user.read",
+            content = [Content(schema = Schema(implementation = ApiError::class))],
+        ),
+    )
+    fun list(
+        @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) status: String?,
+        @RequestParam(defaultValue = "0") @Min(0) page: Int,
+        @Parameter @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
+    ): PageResponse<DirectoryUserResponse> {
+        val parsed = status?.let(::parseStatus)
+        val results = directory.list(
+            q,
+            parsed,
+            PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")),
+        )
+        // One lookup for the page rather than a profile query per row - the
+        // same N+1 the course listing already avoids for thumbnails.
+        val profiles = directory.profilesFor(results.content.mapNotNull { it.id })
+        return PageResponse.from(results) { DirectoryUserResponse.of(it, profiles[it.id]) }
+    }
+
+    @GetMapping("/{userId}")
+    @Operation(summary = "One learner", description = "Requires `user.read`.")
+    fun get(@PathVariable userId: UUID): DirectoryUserResponse {
+        val user = directory.get(userId)
+        return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
+    }
+
+    @PostMapping("/{userId}/status")
+    @Operation(
+        summary = "Suspend or reinstate a learner",
+        description = "Requires `user.suspend`. Suspending revokes their sessions, so " +
+            "access ends within one access-token lifetime rather than lasting the " +
+            "refresh token's month.",
+    )
+    fun setStatus(
+        @PathVariable userId: UUID,
+        @Valid @RequestBody request: SetUserStatusRequest,
+    ): DirectoryUserResponse {
+        val user = directory.setStatus(userId, parseStatus(request.status))
+        return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
+    }
+
+    private fun parseStatus(raw: String): UserStatus =
+        runCatching { UserStatus.valueOf(raw.uppercase()) }
+            .getOrElse { throw BusinessRuleException("INVALID_STATUS", "Unknown status $raw") }
+}
