@@ -592,6 +592,37 @@ enough to need them (AGENT.md §5).
         confirmed; only genuinely absent objects are marked FAILED
   - [x] Checksum (the storage ETag) read back alongside the size on complete
         and on sweep recovery — from storage, never from the client
+  - [x] **Resumable multipart uploads** (`V10__multipart_uploads.sql`). Two
+        problems, not one: a presigned PUT expires after 15 minutes while a 4GB
+        lecture takes closer to an hour on an ordinary connection, so large
+        uploads failed *deterministically* rather than unluckily — and when one
+        was interrupted there was nowhere for the transferred bytes to live, so
+        the client began again from zero. S3 refuses a single PUT above 5GB in
+        any case
+  - [x] Resuming is a **question, not a mechanism**: storage holds the parts
+        between requests, so `GET .../parts` tells a client what landed and it
+        sends only the difference. An upload interrupted at 90% costs the last
+        10%
+  - [x] `media_objects.upload_id` is the piece the server has to keep. A browser
+        that closed cannot reconstruct it, and without it a half-finished upload
+        is unresumable however many parts storage still holds. Cleared on
+        completion, so nothing mistakes a finished object for one in flight
+  - [x] **Part size scales with the file.** S3 allows at most 10,000 parts, so a
+        fixed 5MB would cap an upload at 50GB, while a fixed 100MB would make a
+        30MB file a pointless three-round-trip dance
+  - [x] Bytes still never pass through the application — parts are presigned
+        exactly as whole objects already are, which is what keeps the app's own
+        multipart limit at 25MB while gigabyte files upload fine
+  - [x] `PendingUploadSweeper` now **aborts** the multipart upload as well as
+        marking the row FAILED. Parts neither completed nor aborted stay in the
+        bucket, do not appear in an ordinary listing, and are billed — silent
+        growth is exactly what that sweep exists to prevent
+  - [x] The five endpoints map one-to-one onto what `@uppy/aws-s3` calls, so the
+        browser handles chunking, parallelism, retries and progress while the
+        server only signs and records. A server-side uploader (tus, Uppy
+        Companion) would have put bytes back in the request path
+  - [x] 7 integration tests against real MinIO — multipart semantics are exactly
+        what a mock would get wrong
   - [x] **FFmpeg transcoding** — see §10
 - [x] `platform/notifications` — notification service, channels, RabbitMQ worker
 - [x] `platform/maintenance` — scheduled sweeps guarded by a PostgreSQL
@@ -770,11 +801,8 @@ is carried into the exception rather than dropped for the status code.
 **Remaining work**, honestly:
 - Admin: nothing. All 16 permissions are enforced; the unbuilt parts of the
   `/settings` page are recorded in §8 as decisions, not gaps
-- Media: **resumable multipart upload**. Presigned PUT is single-shot, so a 4GB
-  lecture that drops at 90% starts over. Raised while designing transcoding as
-  the real answer to large sources — client-side compression is not (§10)
 - Ops: build and run **both** images, and boot once under the `prod` profile.
-  This now spans nine migrations, two images, a JSON seeder and a worker whose
+  This now spans ten migrations, two images, a JSON seeder and a worker whose
   entire point is a binary the API image does not have
 
 Everything else on this list is either finished or a deliberate non-goal
@@ -802,7 +830,7 @@ ship working endpoints with integration tests against real infrastructure.
       to one test class, but Spring caches one context across all of them — the
       second class then reuses a context pointing at a stopped container. Started
       once per JVM, removed by Ryuk at exit.
-- [x] **285 tests, all green** (verified run, not a stale report)
+- [x] **292 tests, all green** (verified run, not a stale report)
 - [x] **Notification delivery race, found and fixed.** `NotificationEventListener`
       was annotated `@Transactional(REQUIRES_NEW)`, so the row was created *and*
       the RabbitMQ message published inside one transaction. The worker is fast,
@@ -1140,6 +1168,8 @@ rather than in a file committed next to the code that reads it.
       `EmailSender` are: transcoding is the one job here genuinely cheaper to
       buy than to run, and behind this interface a managed encoder is a class
       and a property rather than a rewrite
+- [x] `V10__multipart_uploads.sql` — `media_objects.upload_id`, the one thing
+      the server must keep for an upload to be resumable
 - [x] `V9__transcode_jobs.sql` — a job has attempts, an error and a life longer
       than the request that made it; `media_objects.status` describes an upload
 - [x] `TranscodeMessaging` — exchange, queue and DLQ, the same shape as
