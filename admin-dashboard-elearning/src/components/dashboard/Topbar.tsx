@@ -3,6 +3,8 @@ import { Bell, Check, Laptop, Moon, Search, Sun, Languages } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTheme } from "@/lib/theme";
 import { useI18n, languages } from "@/lib/i18n";
+import { useAdminMeQuery } from "@/hooks/queries";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +13,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+function ProfileBadge() {
+  const { data: admin, isLoading } = useAdminMeQuery();
+
+  if (isLoading || !admin) {
+    return <Skeleton className="h-9 w-9 rounded-full" />;
+  }
+
+  const name = admin.username || admin.email || "Administrator";
+
+  return (
+    <Link
+      to="/settings"
+      title={admin.email}
+      aria-label={`Signed in as ${name}`}
+      className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-xs font-bold text-primary ring-1 ring-border transition-transform hover:scale-105 hover:ring-primary active:scale-95"
+    >
+      {name.slice(0, 2).toUpperCase()}
+    </Link>
+  );
+}
 
 export function Topbar() {
   const { theme, resolvedTheme, setTheme } = useTheme();
@@ -134,18 +157,10 @@ export function Topbar() {
           <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive" />
         </button>
 
-        {/* Profile */}
-        <Link
-          to="/login"
-          title="Account / Sign in"
-          className="rounded-full transition-transform hover:scale-105 active:scale-95"
-        >
-          <img
-            src="https://i.pravatar.cc/64?img=47"
-            alt="Your profile"
-            className="h-9 w-9 rounded-full object-cover ring-1 ring-border hover:ring-primary"
-          />
-        </Link>
+        {/* Profile. Was a stock portrait linking to /login — which the route
+            guard now bounces straight back, since reaching this bar at all
+            means you are already signed in. */}
+        <ProfileBadge />
       </div>
     </header>
   );

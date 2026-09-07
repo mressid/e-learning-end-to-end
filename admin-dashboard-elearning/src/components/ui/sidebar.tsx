@@ -175,7 +175,9 @@ const Sidebar = React.forwardRef<
       return (
         <div
           className={cn(
-            "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground",
+            // shrink-0 so a wide page cannot squeeze the rail; min-h-0 so its
+            // own children can own their overflow instead of bursting out.
+            "flex h-full min-h-0 w-(--sidebar-width) shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
             className,
           )}
           ref={ref}
@@ -246,7 +248,7 @@ const Sidebar = React.forwardRef<
         >
           <div
             data-sidebar="sidebar"
-            className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
+            className="flex h-full min-h-0 w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
           >
             {children}
           </div>

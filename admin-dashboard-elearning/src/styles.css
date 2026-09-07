@@ -155,3 +155,39 @@
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
 }
+
+/*
+ * The sidebar's scrollable regions.
+ *
+ * These only scroll when they have to — an unbounded curriculum tree, or a
+ * window too short for the nav — so a permanent gutter would advertise a
+ * scrollbar that is usually not there. Thin, sidebar-coloured, and only
+ * visible on hover.
+ */
+@utility sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 150ms ease;
+
+  &:hover {
+    scrollbar-color: var(--sidebar-border) transparent;
+  }
+
+  /* WebKit needs the explicit pseudo-elements; Firefox uses the two above. */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: var(--sidebar-border);
+  }
+}

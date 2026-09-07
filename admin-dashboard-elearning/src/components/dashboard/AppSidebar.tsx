@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   BookOpen,
@@ -18,6 +18,7 @@ import {
   HelpCircle,
   FileCheck,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
 
 import { Sidebar } from "@/components/ui/sidebar";
@@ -31,8 +32,76 @@ import {
   useItemsQuery,
   useCourseInstructorsQuery,
   useCourseReviewSummaryQuery,
+  useAdminMeQuery,
+  useLogoutMutation,
 } from "@/hooks/queries";
 import type { SectionResponse } from "@/api";
+
+/**
+ * The signed-in administrator, and the way out.
+ *
+ * Previously a hardcoded name and a pravatar.cc portrait of someone who does
+ * not exist — which meant every session looked like the same person and there
+ * was no way to sign out at all.
+ */
+function SidebarAccount() {
+  const { data: admin, isLoading } = useAdminMeQuery();
+  const logout = useLogoutMutation();
+  const navigate = useNavigate();
+
+  const signOut = () => {
+    logout.mutate(undefined, {
+      // onSettled, not onSuccess: the local session is dropped either way, so
+      // staying on the dashboard after a failed call would be the wrong result.
+      onSettled: () => navigate({ to: "/login" }),
+    });
+  };
+
+  if (isLoading || !admin) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/30 p-2">
+        <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-2.5 w-16" />
+        </div>
+      </div>
+    );
+  }
+
+  const name = admin.username || admin.email || "Administrator";
+  const initials = name.slice(0, 2).toUpperCase();
+  // Role names are author-defined on the backend, so they are shown as stored
+  // rather than run through i18n.
+  const roles = admin.roles?.map((r) => r.name).join(", ");
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/30 p-2 text-xs">
+      <span
+        aria-hidden
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-[11px] font-bold text-primary ring-1 ring-border/50"
+      >
+        {initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold text-sidebar-foreground" title={admin.email}>
+          {name}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{roles || admin.email}</p>
+      </div>
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={logout.isPending}
+        title="Sign out"
+        aria-label="Sign out"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 function SidebarSectionItem({
   courseId,
@@ -236,10 +305,15 @@ export function AppSidebar() {
 
   return (
     <Sidebar
-      collapsible="none"
+      // Off-canvas, not "none". With "none" the rail was permanently mounted at
+      // 16rem on every screen — so the topbar's toggle drove state nothing read,
+      // and a phone lost most of its width to navigation it could not dismiss.
+      // Off-canvas keeps the desktop rail exactly as it was, gives that button
+      // something to do, and turns the mobile rail into a sheet.
+      collapsible="offcanvas"
       side={isRtl ? "right" : "left"}
       className={cn(
-        "w-64 select-none bg-sidebar text-sidebar-foreground transition-all duration-200",
+        "h-svh w-64 shrink-0 select-none bg-sidebar text-sidebar-foreground",
         isRtl ? "border-l border-r-0" : "border-r",
       )}
       style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
@@ -248,8 +322,13 @@ export function AppSidebar() {
         /* ========================================================================= */
         /* Drill-Down Course Contextual Navigation                                  */
         /* ========================================================================= */
-        <div className="flex h-full w-full flex-col justify-between p-3.5">
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+        <div className="flex h-full min-h-0 w-full flex-col p-3.5">
+          {/*
+            The curriculum tree is the one genuinely unbounded thing in here —
+            a course can have any number of sections and items — so it gets its
+            own scroll. Everything around it stays fixed.
+          */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto sidebar-scroll">
             {/* Return to Platform Navigation Action */}
             <Link
               to="/courses"
@@ -373,7 +452,7 @@ export function AppSidebar() {
           </div>
 
           {/* Bottom Settings Link */}
-          <div className="pt-3 border-t border-sidebar-border/60 shrink-0">
+          <div className="mt-3 shrink-0 border-t border-sidebar-border/60 pt-3">
             <Link
               to="/settings"
               className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
@@ -387,9 +466,9 @@ export function AppSidebar() {
         /* ========================================================================= */
         /* Primary Hub Platform Navigation (Standard Single-Tier)                    */
         /* ========================================================================= */
-        <div className="flex h-full w-full flex-col justify-between p-3.5">
-          <div className="space-y-4">
-            {/* Top Brand Logo */}
+        <div className="flex h-full min-h-0 w-full flex-col p-3.5">
+          {/* Top Brand Logo — pinned */}
+          <div className="shrink-0">
             <div className="flex items-center gap-2.5 px-2 py-1.5">
               <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
                 <GraduationCap className="h-5 w-5" />
@@ -401,7 +480,15 @@ export function AppSidebar() {
                 <p className="text-[11px] text-muted-foreground truncate">{t("brand.tagline")}</p>
               </div>
             </div>
+          </div>
 
+          {/*
+            The nav itself is a fixed, known length, so at any ordinary window
+            height nothing here scrolls. `overflow-y-auto` is a floor, not a
+            feature: on a very short viewport it keeps Settings and the account
+            card reachable instead of clipping them off the bottom.
+          */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pt-4 sidebar-scroll">
             {/* Main Navigation Group */}
             <div className="space-y-1">
               <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -467,8 +554,8 @@ export function AppSidebar() {
             </div>
           </div>
 
-          {/* Bottom Actions & User Profile */}
-          <div className="space-y-2 pt-3 border-t border-sidebar-border/60">
+          {/* Bottom Actions & User Profile — pinned */}
+          <div className="mt-3 shrink-0 space-y-2 border-t border-sidebar-border/60 pt-3">
             <div className="space-y-1">
               {bottom.map((item) => {
                 const active = isItemActive(item.url);
@@ -491,18 +578,7 @@ export function AppSidebar() {
               })}
             </div>
 
-            {/* User Profile Card */}
-            <div className="flex items-center gap-2.5 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/30 p-2 text-xs">
-              <img
-                src="https://i.pravatar.cc/64?img=47"
-                alt="Amina Bel"
-                className="h-8 w-8 rounded-full object-cover ring-1 ring-border/50"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-sidebar-foreground">Amina Bel</p>
-                <p className="truncate text-[10px] text-muted-foreground">{t("sidebar.role")}</p>
-              </div>
-            </div>
+            <SidebarAccount />
           </div>
         </div>
       )}

@@ -213,11 +213,18 @@ function RootComponent() {
             </main>
           ) : (
             <SidebarProvider>
-              <div className="flex min-h-screen w-full bg-background text-foreground transition-colors duration-200">
+              {/*
+                Exactly one viewport tall, and the page itself never scrolls.
+                With `min-h-screen` the row grew with its content, so the
+                sidebar — however tall — scrolled off the top as soon as a page
+                was longer than the window. Scrolling belongs to <main> alone;
+                the sidebar and topbar stay put.
+              */}
+              <div className="flex h-svh w-full overflow-hidden bg-background text-foreground transition-colors duration-200">
                 <AppSidebar />
-                <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                   <Topbar />
-                  <main className="min-w-0 flex-1">
+                  <main className="min-w-0 flex-1 overflow-y-auto">
                     {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
                     <Outlet />
                   </main>
