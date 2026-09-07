@@ -55,6 +55,9 @@ class S3ObjectStorage(
     override fun publicUrl(bucket: String, key: String): URI =
         s3.utilities().getUrl { it.bucket(bucket).key(key) }.toURI()
 
+    override fun get(bucket: String, key: String): ByteArray =
+        s3.getObjectAsBytes { it.bucket(bucket).key(key) }.asByteArray()
+
     override fun statOf(bucket: String, key: String): StoredObject? = try {
         val head = s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build())
         StoredObject(head.contentLength(), head.eTag()?.trim('"'))

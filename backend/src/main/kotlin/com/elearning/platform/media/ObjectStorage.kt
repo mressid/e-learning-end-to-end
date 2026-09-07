@@ -34,6 +34,16 @@ interface ObjectStorage {
      */
     fun publicUrl(bucket: String, key: String): URI
 
+    /**
+     * Reads an object into memory.
+     *
+     * The exception to "large files never pass through the application": the
+     * transcoding worker has to hand real bytes to FFmpeg, and it is a separate
+     * process from the API precisely so that this does not happen inside a
+     * request. Nothing serving HTTP should call this.
+     */
+    fun get(bucket: String, key: String): ByteArray
+
     /** Size and checksum, or null when the object is not present. */
     fun statOf(bucket: String, key: String): StoredObject?
 
