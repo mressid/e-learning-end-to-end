@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { PanelAddProps } from "./panel";
 import { toast } from "sonner";
 
 const description = "People who may author courses.";
@@ -27,7 +28,7 @@ const MIN_PASSWORD = 12;
 const ADD_FORM_ID = "add-instructor-form";
 const EDIT_FORM_ID = "edit-instructor-form";
 
-export function InstructorsPanel({ onAdd }: { onAdd?: (open: () => void) => void }) {
+export function InstructorsPanel({ onAdd }: PanelAddProps) {
   const { has } = usePermissions();
   const canWrite = has(PERMISSIONS.USER_WRITE);
 
@@ -36,8 +37,6 @@ export function InstructorsPanel({ onAdd }: { onAdd?: (open: () => void) => void
   const [page, setPage] = useState(0);
   const [adding, setAdding] = useState(false);
 
-  // The workspace renders the toolbar, so it needs a handle on the sheet the
-  // panel owns. Passing the opener up beats lifting the whole sheet out.
   useEffect(() => {
     onAdd?.(() => setAdding(true));
   }, [onAdd]);

@@ -1,5 +1,4 @@
-import { useState, type FormEvent } from "react";
-import { Plus, Trash2, UserPlus } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   useRolesQuery,
   usePermissionCatalogueQuery,
@@ -30,7 +29,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { FloatingDetailSheet } from "@/components/dashboard/FloatingDetailSheet";
+import type { PanelAddProps } from "./panel";
 import { toast } from "sonner";
+
+const CREATE_ADMIN_FORM = "create-admin-form";
 
 const fail = (err: unknown, fallback: string) =>
   toast.error(parseApiError(err).message || fallback);
@@ -42,7 +45,7 @@ const fail = (err: unknown, fallback: string) =>
  * itself grantable, so no role can be configured into becoming one.
  */
 
-export function AdminsPanel() {
+export function AdminsPanel({ onAdd }: PanelAddProps) {
   const admins = useAdminsQuery({ page: 0, size: 50 });
   const roles = useRolesQuery();
   const me = useAdminMeQuery();
@@ -50,14 +53,24 @@ export function AdminsPanel() {
   const setRole = useSetAdminRoleMutation();
   const setStatus = useSetAdminStatusMutation();
 
+  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ username: "", email: "", password: "" });
+
+  useEffect(() => {
+    onAdd?.(() => setCreating(true));
+  }, [onAdd]);
+
+  const closeCreate = () => {
+    setForm({ username: "", email: "", password: "" });
+    setCreating(false);
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     createAdmin.mutate(form, {
       onSuccess: (created) => {
-        toast.success(`${created.username} added`);
-        setForm({ username: "", email: "", password: "" });
+        toast.success(`${created.username} added — give them a role below`);
+        closeCreate();
       },
       onError: (err) => fail(err, "Could not create that administrator."),
     });
@@ -75,47 +88,6 @@ export function AdminsPanel() {
 
   return (
     <div className="space-y-5">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="admin-username">Username</Label>
-          <Input
-            id="admin-username"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="admin-email">Email</Label>
-          <Input
-            id="admin-email"
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="admin-password">Initial password</Label>
-          <Input
-            id="admin-password"
-            type="password"
-            minLength={12}
-            autoComplete="new-password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            required
-          />
-        </div>
-        <Button type="submit" disabled={createAdmin.isPending}>
-          <UserPlus className="h-4 w-4" />
-          Add
-        </Button>
-      </form>
-      <p className="-mt-3 text-xs text-muted-foreground">
-        A new administrator starts with no roles, and so no permissions. Grant one below.
-      </p>
-
       <div className="space-y-3">
         {admins.data?.content?.map((admin) => {
           const heldRoles = new Set((admin.roles ?? []).map((r) => r.id));
@@ -203,6 +175,63 @@ export function AdminsPanel() {
           );
         })}
       </div>
+
+      <FloatingDetailSheet
+        open={creating}
+        onOpenChange={(next) => !next && closeCreate()}
+        title="Add an administrator"
+        description="They start with no roles, and so no permissions. Give them one from the list afterwards."
+        footerActions={
+          <>
+            <Button type="button" variant="outline" onClick={closeCreate}>
+              Cancel
+            </Button>
+            <Button type="submit" form={CREATE_ADMIN_FORM} disabled={createAdmin.isPending}>
+              {createAdmin.isPending ? "Adding…" : "Add administrator"}
+            </Button>
+          </>
+        }
+      >
+        <form id={CREATE_ADMIN_FORM} onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-username">Username</Label>
+            <Input
+              id="admin-username"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-email">Email</Label>
+            <Input
+              id="admin-email"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-password">Initial password</Label>
+            <Input
+              id="admin-password"
+              type="password"
+              minLength={12}
+              autoComplete="new-password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              At least 12 characters. There is no confirmation email and nothing forces a change at
+              first sign-in, so pass it on deliberately.
+            </p>
+          </div>
+        </form>
+      </FloatingDetailSheet>
     </div>
   );
 }

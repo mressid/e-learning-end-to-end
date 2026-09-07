@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { Plus, Trash2, UserPlus } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Trash2 } from "lucide-react";
 import {
   useRolesQuery,
   usePermissionCatalogueQuery,
@@ -30,7 +30,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { FloatingDetailSheet } from "@/components/dashboard/FloatingDetailSheet";
+import type { PanelAddProps } from "./panel";
 import { toast } from "sonner";
+
+const CREATE_ROLE_FORM = "create-role-form";
 
 const fail = (err: unknown, fallback: string) =>
   toast.error(parseApiError(err).message || fallback);
@@ -42,24 +46,41 @@ const fail = (err: unknown, fallback: string) =>
  * itself grantable, so no role can be configured into becoming one.
  */
 
-export function RolesPanel() {
+export function RolesPanel({ onAdd }: PanelAddProps) {
   const roles = useRolesQuery();
   const permissions = usePermissionCatalogueQuery();
   const createRole = useCreateRoleMutation();
   const deleteRole = useDeleteRoleMutation();
 
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<RoleResponse | null>(null);
+
+  useEffect(() => {
+    onAdd?.(() => setCreating(true));
+  }, [onAdd]);
+
+  const reset = () => {
+    setName("");
+    setDescription("");
+    setChosen(new Set());
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     createRole.mutate(
-      { name: name.trim(), description: null, permissions: [] },
+      // Permissions are chosen here rather than only afterwards on the card: a
+      // role created empty grants nothing, and the moment between creating it
+      // and ticking the first box is a role that exists and does nothing.
+      { name: name.trim(), description: description.trim() || null, permissions: [...chosen] },
       {
         onSuccess: () => {
           toast.success(`Role "${name.trim()}" created`);
-          setName("");
+          reset();
+          setCreating(false);
         },
         onError: (err) => fail(err, "Could not create that role."),
       },
@@ -78,24 +99,13 @@ export function RolesPanel() {
     );
   }
 
+  const closeCreate = () => {
+    reset();
+    setCreating(false);
+  };
+
   return (
     <div className="space-y-5">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-        <div className="min-w-0 flex-1 space-y-1.5 sm:max-w-xs">
-          <Label htmlFor="role-name">New role</Label>
-          <Input
-            id="role-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Content moderator"
-          />
-        </div>
-        <Button type="submit" disabled={createRole.isPending || !name.trim()}>
-          <Plus className="h-4 w-4" />
-          Create
-        </Button>
-      </form>
-
       <div className="space-y-4">
         {roles.data?.map((role) => (
           <RoleCard
@@ -106,6 +116,96 @@ export function RolesPanel() {
           />
         ))}
       </div>
+
+      <FloatingDetailSheet
+        open={creating}
+        onOpenChange={(next) => !next && closeCreate()}
+        title="Create a role"
+        description="A role is a named set of permissions you can hand to an administrator."
+        size="lg"
+        footerActions={
+          <>
+            <Button type="button" variant="outline" onClick={closeCreate}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form={CREATE_ROLE_FORM}
+              disabled={createRole.isPending || !name.trim()}
+            >
+              {createRole.isPending ? "Creating…" : "Create role"}
+            </Button>
+          </>
+        }
+      >
+        <form id={CREATE_ROLE_FORM} onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="new-role-name">Name</Label>
+            <Input
+              id="new-role-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Content moderator"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-role-description">Description</Label>
+            <Input
+              id="new-role-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What is this role for?"
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional, but the next person to read the list will thank you.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Permissions</Label>
+            <p className="text-xs text-muted-foreground">
+              {chosen.size === 0
+                ? "None chosen — the role will grant nothing until you add some."
+                : `${chosen.size} of ${permissions.data?.length ?? 0} selected.`}
+            </p>
+            <div className="space-y-1">
+              {permissions.data?.map((permission) => {
+                const code = permission.code;
+                if (!code) return null;
+                return (
+                  <label
+                    key={code}
+                    htmlFor={`new-role-${code}`}
+                    className="flex cursor-pointer items-start gap-2 rounded-lg p-1.5 hover:bg-secondary/60"
+                  >
+                    <Checkbox
+                      id={`new-role-${code}`}
+                      checked={chosen.has(code)}
+                      onCheckedChange={(v) =>
+                        setChosen((prev) => {
+                          const next = new Set(prev);
+                          if (v === true) next.add(code);
+                          else next.delete(code);
+                          return next;
+                        })
+                      }
+                      className="mt-0.5"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-mono text-[11px] font-medium">{code}</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {permission.description}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </form>
+      </FloatingDetailSheet>
 
       <AlertDialog
         open={pendingDelete !== null}

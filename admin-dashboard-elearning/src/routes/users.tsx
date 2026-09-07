@@ -105,11 +105,26 @@ function PeopleWorkspace() {
   const active: PeopleTab = requested ?? "learners";
   const view = VIEWS[active];
 
-  // The instructor panel owns its "add" sheet; the toolbar here opens it.
-  const openAddInstructor = useRef<(() => void) | null>(null);
-  const registerAddInstructor = useCallback((open: () => void) => {
-    openAddInstructor.current = open;
+  // Each panel owns its own "add" sheet — it knows what it is creating — while
+  // the button belongs up here beside the title. The panel hands its opener out
+  // once on mount and this holds it.
+  const openAdd = useRef<Partial<Record<PeopleTab, () => void>>>({});
+  const registerInstructorAdd = useCallback((open: () => void) => {
+    openAdd.current.instructors = open;
   }, []);
+  const registerAdminAdd = useCallback((open: () => void) => {
+    openAdd.current.admins = open;
+  }, []);
+  const registerRoleAdd = useCallback((open: () => void) => {
+    openAdd.current.roles = open;
+  }, []);
+
+  const addAction: Partial<Record<PeopleTab, { label: string; allowed: boolean }>> = {
+    instructors: { label: "Add instructor", allowed: has(PERMISSIONS.USER_WRITE) },
+    admins: { label: "Add administrator", allowed: isSuperAdmin },
+    roles: { label: "Create role", allowed: isSuperAdmin },
+  };
+  const action = addAction[active];
 
   const allowed =
     active === "admins" || active === "roles"
@@ -121,10 +136,10 @@ function PeopleWorkspace() {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <PageHeader title={view.title} description={view.description}>
-        {active === "instructors" && has(PERMISSIONS.USER_WRITE) && (
-          <Button size="sm" onClick={() => openAddInstructor.current?.()}>
+        {action?.allowed && allowed && (
+          <Button size="sm" onClick={() => openAdd.current[active]?.()}>
             <Plus className="h-4 w-4" />
-            Add instructor
+            {action.label}
           </Button>
         )}
       </PageHeader>
@@ -139,9 +154,9 @@ function PeopleWorkspace() {
       ) : (
         <>
           {active === "learners" && <LearnersPanel />}
-          {active === "instructors" && <InstructorsPanel onAdd={registerAddInstructor} />}
-          {active === "admins" && <AdminsPanel />}
-          {active === "roles" && <RolesPanel />}
+          {active === "instructors" && <InstructorsPanel onAdd={registerInstructorAdd} />}
+          {active === "admins" && <AdminsPanel onAdd={registerAdminAdd} />}
+          {active === "roles" && <RolesPanel onAdd={registerRoleAdd} />}
           {active === "sessions" && <SessionsPanel />}
         </>
       )}
