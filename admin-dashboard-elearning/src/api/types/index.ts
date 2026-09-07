@@ -78,3 +78,80 @@ export type UnreadCountResponse = Schemas["UnreadCountResponse"];
 export type UploadTicketResponse = Schemas["UploadTicketResponse"];
 export type RequestUploadRequest = Schemas["RequestUploadRequest"];
 export type MediaObjectResponse = Schemas["MediaObjectResponse"];
+
+// Resumable multipart upload. Large video goes straight to object storage in
+// parts; the API only ever signs URLs, so bytes never pass through it.
+export type BeginMultipartUploadRequest = Schemas["BeginMultipartUploadRequest"];
+export type MultipartUploadTicket = Schemas["MultipartUploadTicket"];
+export type UploadPartUrl = Schemas["UploadPartUrl"];
+export type UploadedPartResponse = Schemas["UploadedPartResponse"];
+export type PartRef = Schemas["PartRef"];
+export type CompleteMultipartUploadRequest = Schemas["CompleteMultipartUploadRequest"];
+export type LessonContentUrlResponse = Schemas["LessonContentUrlResponse"];
+export type DownloadUrlResponse = Schemas["DownloadUrlResponse"];
+
+// Administration. A separate table from learners with its own sign-in — an
+// admin token is rejected on learner routes and vice versa.
+export type AdminLoginRequest = Schemas["AdminLoginRequest"];
+export type AdminRefreshRequest = Schemas["AdminRefreshRequest"];
+export type AdminTokenResponse = Schemas["AdminTokenResponse"];
+export type AdminResponse = Schemas["AdminResponse"];
+export type CreateAdminRequest = Schemas["CreateAdminRequest"];
+export type SetAdminStatusRequest = Schemas["SetAdminStatusRequest"];
+export type ChangePasswordRequest = Schemas["ChangePasswordRequest"];
+
+// Roles & permissions. Roles are configurable; the super admin holds every
+// permission code implicitly rather than through a role.
+export type PermissionResponse = Schemas["PermissionResponse"];
+export type RoleResponse = Schemas["RoleResponse"];
+export type RoleSummary = Schemas["RoleSummary"];
+export type CreateRoleRequest = Schemas["CreateRoleRequest"];
+export type SetRolePermissionsRequest = Schemas["SetRolePermissionsRequest"];
+
+// User & content administration
+export type DirectoryUserResponse = Schemas["DirectoryUserResponse"];
+export type SetUserStatusRequest = Schemas["SetUserStatusRequest"];
+export type AdminCertificateResponse = Schemas["AdminCertificateResponse"];
+export type CreateCategoryRequest = Schemas["CreateCategoryRequest"];
+export type RenameCategoryRequest = Schemas["RenameCategoryRequest"];
+export type EmailRequest = Schemas["EmailRequest"];
+
+// Prerequisites. Course-level ones are free text — deliberately not a link to
+// another course, so unpublishing cannot strand a learner mid-catalogue. Item
+// level ones stay real references, being confined to one course.
+export type CoursePrerequisite = Schemas["CoursePrerequisite"];
+export type SetCoursePrerequisitesRequest = Schemas["SetCoursePrerequisitesRequest"];
+export type PrerequisiteResponse = Schemas["PrerequisiteResponse"];
+export type SetItemPrerequisitesRequest = Schemas["SetItemPrerequisitesRequest"];
+
+// Quiz attempts & grading
+export type AttemptResponse = Schemas["AttemptResponse"];
+export type AttemptResultResponse = Schemas["AttemptResultResponse"];
+export type AttemptGradingResponse = Schemas["AttemptGradingResponse"];
+export type SubmitAttemptRequest = Schemas["SubmitAttemptRequest"];
+export type AnswerRequest = Schemas["AnswerRequest"];
+export type GradeAttemptRequest = Schemas["GradeAttemptRequest"];
+export type ResponseGradeRequest = Schemas["ResponseGradeRequest"];
+export type ResponseToGrade = Schemas["ResponseToGrade"];
+export type QuestionOptionRequest = Schemas["QuestionOptionRequest"];
+export type AuthorQuestionOption = Schemas["AuthorQuestionOption"];
+export type StudentOptionResponse = Schemas["StudentOptionResponse"];
+
+// Enrolment & progress
+export type EnrollmentResponse = Schemas["EnrollmentResponse"];
+export type ProgressResponse = Schemas["ProgressResponse"];
+export type RecordProgressRequest = Schemas["RecordProgressRequest"];
+
+// Resources attached to an item
+export type ResourceResponse = Schemas["ResourceResponse"];
+export type CreateResourceRequest = Schemas["CreateResourceRequest"];
+export type AttachResourceRequest = Schemas["AttachResourceRequest"];
+export type AttachedResourceResponse = Schemas["AttachedResourceResponse"];
+export type ResourceDownloadUrlResponse = Schemas["ResourceDownloadUrlResponse"];
+
+// Community: reviews & discussion
+export type WriteReviewRequest = Schemas["WriteReviewRequest"];
+export type CreateThreadRequest = Schemas["CreateThreadRequest"];
+export type ThreadDetailResponse = Schemas["ThreadDetailResponse"];
+export type ChangeThreadStatusRequest = Schemas["ChangeThreadStatusRequest"];
+export type AddCommentRequest = Schemas["AddCommentRequest"];

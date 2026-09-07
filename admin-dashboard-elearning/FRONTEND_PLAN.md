@@ -1,34 +1,50 @@
 # Admin dashboard — plan
 
 Written against the backend as it stands (292 tests green, ten migrations). The
-short version: the API layer here was generated from an OpenAPI document that is
-now both incomplete and **wrong**, and the dashboard signs in through the
-learner's door rather than its own.
+short version: the API layer here was generated from an OpenAPI document that
+was both incomplete and **wrong** — that is now fixed (step 0) — and the
+dashboard still signs in through the learner's door rather than its own.
 
 Ordered so each step unblocks the next.
 
 ---
 
-## 0. Regenerate `openapi.json` — do this first
+## 0. Regenerate `openapi.json` — **done**
 
-`openapi.json` was captured on 6 September and describes **73 paths**. The
-backend now exposes **134 mappings**. Everything below is generated from it, so
-nothing else is worth starting until it is current.
+The captured document described 73 paths against a backend serving 113. It is
+now regenerated from the running app: **113 paths, 107 schemas, 32 of them under
+`/api/v1/admin`**, and `src/api/types/openapi.ts` is generated from it.
+`tsc --noEmit` passes.
+
+Keeping it current is now one command, so it cannot silently rot again:
 
 ```bash
-cd ../backend && ./gradlew bootRun          # dev profile, port 8081
-curl -s localhost:8081/v3/api-docs > ../admin-dashboard-elearning/openapi.json
-# then regenerate src/api/types/openapi.ts however it was produced
+bun run api:sync            # fetch the spec, then regenerate the types
+API_URL=http://host:port bun run api:sync    # against a non-default backend
 ```
 
-Missing entirely: every `/admin/*` endpoint (roles, users, instructors, courses,
-certificates, submissions, media, audit, sessions), resumable multipart upload,
-and HLS playback.
+`scripts/fetch-openapi.mjs` writes the document pretty-printed and refuses to
+overwrite `openapi.json` with an empty or unreachable response — a truncated
+spec would delete types rather than fail, which is the failure mode worth
+guarding.
 
-**Worse than missing — wrong.** The document still types course prerequisites as
-`SetPrerequisitesRequest`, a UUID array. They are free text now
-(`{"prerequisites": ["Basic Python"]}`). A generated client compiles against the
-old shape and fails at runtime, which is the least helpful way to find out.
+What arrived with the regeneration: every `/admin/*` endpoint (auth, admins,
+roles, permissions, users, instructors, courses, categories, certificates,
+submissions, media, audit, sessions), the five resumable multipart-upload
+routes, and HLS playback at `/api/v1/items/{itemId}/lesson/stream.m3u8`.
+
+The wrong shape is gone too. `SetPrerequisitesRequest` (a UUID array) no longer
+exists; course prerequisites are `SetCoursePrerequisitesRequest`
+(`{"prerequisites": ["Basic Python"]}`), while item prerequisites stay real
+references as `SetItemPrerequisitesRequest`. Nothing in the dashboard referenced
+the old name, so this cost nothing to correct — but only because no page had
+been built on it yet.
+
+`src/api/types/index.ts`, the hand-written alias façade, was missing 54 of the
+107 schemas — it had drifted well before this. It now covers all of them.
+**It is hand-maintained: `bun run api:sync` does not touch it.** When an endpoint
+gains a schema, add the alias there too, or the generated type is present and
+simply invisible to the rest of the app.
 
 ---
 

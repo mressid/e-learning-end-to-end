@@ -4,6 +4,641 @@
  */
 
 export interface paths {
+    "/api/v1/admin/admins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List administrators */
+        get: operations["list_4"];
+        put?: never;
+        /**
+         * Create an administrator
+         * @description The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove.
+         */
+        post: operations["create_4"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/admins/{adminId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One administrator, with their roles */
+        get: operations["get_7"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/admins/{adminId}/roles/{roleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give an administrator a role
+         * @description Their existing sessions end, so the new permissions take effect at the next refresh rather than a token lifetime later.
+         */
+        post: operations["assign"];
+        /**
+         * Take a role away
+         * @description Refused for the last super admin: the platform would be left with nobody able to grant the role back.
+         */
+        delete: operations["revoke_1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/admins/{adminId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend or reinstate an administrator
+         * @description Suspending ends their sessions. Refused for the last super admin.
+         */
+        post: operations["setStatus_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the audit trail, newest first
+         * @description Requires `audit.read`. Filter by `action`, by `actorId` to follow one person, or by `targetType` + `targetId` to see everything that happened to one thing.
+         */
+        get: operations["list_13"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign in to the dashboard */
+        post: operations["login_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End the dashboard session */
+        post: operations["logout_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The signed-in administrator, with roles and permissions */
+        get: operations["me_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change your own password
+         * @description Requires the current one, so a borrowed session cannot lock the owner out. Every session ends, including this one.
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a refresh token for a new pair
+         * @description Single use, like the learner side. The new access token carries the administrator's permissions as they stand now, which is how a role change takes effect.
+         */
+        post: operations["refresh_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a category
+         * @description Requires `category.manage`. Seeding still supplies the base tree; this is for the additions a running platform accumulates, which should not each need a migration.
+         */
+        post: operations["createCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/categories/{categoryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a category
+         * @description Requires `category.manage`. Refused while it has subcategories or any course is in it - both foreign keys cascade, so a delete the database allows would silently strip categorisation from every course carrying it.
+         */
+        delete: operations["deleteCategory"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a category
+         * @description Requires `category.manage`. The slug is left alone: it is what the seeder matches on and what a filter URL carries, so regenerating it would orphan the seed entry and break links already shared.
+         */
+        patch: operations["renameCategory"];
+        trace?: never;
+    };
+    "/api/v1/admin/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List issued certificates
+         * @description Requires `certificate.read`. Filter by `courseId`, or by `revoked=true|false`. Verification codes are never returned.
+         */
+        get: operations["list_12"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/certificates/{certificateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One certificate
+         * @description Requires `certificate.read`.
+         */
+        get: operations["get_6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every course
+         * @description Requires `course.read`. Filter with `q` (title substring), `status`, or `owner`; `q` wins, then `status`, then `owner`.
+         */
+        get: operations["list_11"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Counts by status, for the dashboard's overview tiles
+         * @description Requires `course.read`.
+         */
+        get: operations["stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/instructors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List instructors, busiest first
+         * @description Requires `user.read`. An instructor is someone who owns at least one course - there is no instructor role to enumerate.
+         */
+        get: operations["list_10"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse uploaded files
+         * @description Requires `media.read`. Filter by `status` or search `q` against the original filename - the stored object key is generated and means nothing to a person.
+         */
+        get: operations["list_9"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/media/{mediaId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a file
+         * @description Requires `media.delete`. Refused while anything still points at the file - a lesson, a thumbnail, a certificate, a submission or an avatar. The database would not stop this on its own: those references are mostly ON DELETE SET NULL, so the delete would succeed and quietly empty whatever was using it.
+         */
+        delete: operations["delete_2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The permission catalogue
+         * @description Seeded reference data. There is no endpoint to create one: the set is defined by what the application actually checks, so an invented code would name an authority nothing enforces.
+         */
+        get: operations["permissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List roles */
+        get: operations["list_3"];
+        put?: never;
+        /** Create a role */
+        post: operations["create_3"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles/{roleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a role
+         * @description System roles cannot be deleted.
+         */
+        delete: operations["delete_1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles/{roleId}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the permissions a role carries
+         * @description Replaces the whole set. Refused on the super admin role, which means every permission including ones added later - writing a fixed list onto it would freeze it at today's catalogue.
+         */
+        put: operations["setPermissions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live learner sessions, most recently used first
+         * @description Requires `settings.manage`. One entry per login, not per token: rotation mints a successor on every refresh, so counting tokens would report one login as dozens of sessions. Filter with `userId`.
+         */
+        get: operations["list_8"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sessions/admins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live administrator sessions
+         * @description Requires `settings.manage`. Administrators are a separate table, so their sessions are a separate chain and a separate listing.
+         */
+        get: operations["listAdmins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sessions/admins/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End one administrator session
+         * @description Requires `settings.manage`.
+         */
+        delete: operations["revokeAdmin"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sessions/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Sign a learner out everywhere
+         * @description Requires `settings.manage`. For a reported compromise, where ending one device is not enough.
+         */
+        delete: operations["revokeAllForUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End one learner session
+         * @description Requires `settings.manage`. The access token already issued stays valid until it expires - a signed JWT cannot be withdrawn - which is why that lifetime is short. Recorded in the audit trail.
+         */
+        delete: operations["revoke_2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List submissions, newest first
+         * @description Requires `submission.read`. Filter with `status` - `SUBMITTED` is the queue of work waiting to be marked. Grading is not available here; it belongs to the course's instructors.
+         */
+        get: operations["list_7"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List or search learners
+         * @description Requires `user.read`. Pass `q` to match an email or username, or `status` to filter; `q` wins if both are given.
+         */
+        get: operations["list_6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One learner
+         * @description Requires `user.read`.
+         */
+        get: operations["get_5"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{userId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend or reinstate a learner
+         * @description Requires `user.suspend`. Suspending revokes their sessions, so access ends within one access-token lifetime rather than lasting the refresh token's month.
+         */
+        post: operations["setStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/attempts/{attemptId}": {
         parameters: {
             query?: never;
@@ -409,11 +1044,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Courses that must be completed before this one */
+        /**
+         * What a course expects you to know already
+         * @description Free text written by the author. Nothing enforces it - enrolment is not blocked by these.
+         */
         get: operations["coursePrerequisites"];
         /**
-         * Set a course's prerequisites
-         * @description Replaces the whole set. A loop is refused: if it were allowed, neither course could ever be enrolled in.
+         * Set what a course expects you to know already
+         * @description Replaces the whole list. Blank entries and duplicates are dropped rather than rendered as empty or repeated bullets.
          */
         put: operations["setCoursePrerequisites"];
         post?: never;
@@ -745,6 +1383,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a course item
+         * @description Permanent. Refused once a student has touched it: the delete cascades into learning progress, quiz attempts and assignment submissions, and none of that comes back. Archive the course instead.
+         */
+        delete: operations["delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{itemId}/assignment": {
         parameters: {
             query?: never;
@@ -840,6 +1498,26 @@ export interface paths {
          * @description Media ids are never exposed; access follows from the enrolment.
          */
         get: operations["contentUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{itemId}/lesson/stream.m3u8": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * HLS manifest for the lesson's video
+         * @description Same access rule as the lesson itself: an active enrolment, or course editorship. Segment URLs are signed for the caller, so a copied manifest stops working rather than becoming a public mirror of the course. Answers 422 while the video is still being processed - the original file remains downloadable from /content-url in the meantime.
+         */
+        get: operations["stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1044,7 +1722,7 @@ export interface paths {
             cookie?: never;
         };
         /** List your notifications, newest first */
-        get: operations["list_3"];
+        get: operations["list_5"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1123,6 +1801,106 @@ export interface paths {
          *                 it with the same Content-Type, then call `/media/{id}/complete`.
          */
         post: operations["requestUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/uploads/multipart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a resumable upload
+         * @description Use for anything a single PUT would struggle with. The signed URL of an ordinary upload lasts 15 minutes, which a multi-gigabyte file on a domestic connection cannot finish inside - and S3 refuses a single PUT above 5GB regardless. The part size is chosen from the file size so the part count stays inside S3's limit of 10,000.
+         */
+        post: operations["begin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/uploads/multipart/{mediaId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Abandon an upload and discard its parts
+         * @description Worth calling. Parts neither completed nor aborted stay in the bucket, do not appear in an ordinary listing, and are billed.
+         */
+        delete: operations["abort"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/uploads/multipart/{mediaId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble the parts
+         * @description The ETags come from the client because storage issued them to the client; they are how S3 verifies the assembly matches what it received. Size and checksum are still read back from storage, never trusted from here.
+         */
+        post: operations["complete_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/uploads/multipart/{mediaId}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Parts already stored
+         * @description This is what makes an upload resumable: storage keeps the parts between requests, so a client compares this against its own progress and sends only the difference. An upload interrupted at 90% costs the last 10%, not all of it.
+         */
+        get: operations["parts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/uploads/multipart/{mediaId}/parts/{partNumber}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A signed URL for one part
+         * @description Requested as the client reaches each part rather than all at once, so a URL is never issued long before it is used and left to expire.
+         */
+        get: operations["partUrl"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1272,6 +2050,26 @@ export interface paths {
          */
         post: operations["moderate"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sections/{sectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a section and its items
+         * @description Refused with 422 if any item under it has student progress, quiz attempts or assignment submissions - deleting would destroy them. All or nothing, so a section is never left half-emptied.
+         */
+        delete: operations["deleteSection"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1456,6 +2254,56 @@ export interface components {
             /** @enum {string} */
             type?: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_TEXT" | "LONG_TEXT";
         };
+        AdminCertificateResponse: {
+            certificateNumber?: string;
+            /** Format: uuid */
+            courseId?: string;
+            courseTitle?: string | null;
+            /** Format: uuid */
+            id?: string;
+            /** Format: date-time */
+            issuedAt?: string;
+            /** Format: date-time */
+            revokedAt?: string | null;
+            studentEmail?: string | null;
+            /** Format: uuid */
+            studentId?: string;
+            studentName?: string | null;
+            valid?: boolean;
+        };
+        AdminLoginRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        AdminRefreshRequest: {
+            refreshToken: string;
+        };
+        AdminResponse: {
+            /** Format: date-time */
+            createdAt?: string;
+            email?: string;
+            /** Format: uuid */
+            id?: string;
+            /** Format: date-time */
+            lastLoginAt?: string | null;
+            roles?: components["schemas"]["RoleSummary"][];
+            status?: string;
+            username?: string;
+        };
+        AdminTokenResponse: {
+            accessToken?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: int64 */
+            expiresInSeconds?: number;
+            /** @description What this administrator may do. A super admin holds every code. */
+            permissions?: string[];
+            refreshToken?: string;
+            /** Format: date-time */
+            refreshTokenExpiresAt?: string;
+            tokenType?: string;
+        };
         AnswerRequest: {
             /** @description For SHORT_TEXT and LONG_TEXT questions */
             answerText?: string | null;
@@ -1557,6 +2405,17 @@ export interface components {
             text?: string;
             type?: string;
         };
+        BeginMultipartUploadRequest: {
+            contentType: string;
+            filename?: string | null;
+            /**
+             * Format: int64
+             * @description Used to plan the parts; the stored size is read back from storage
+             */
+            sizeBytes?: number;
+            /** @enum {string} */
+            visibility?: "PRIVATE" | "PUBLIC";
+        };
         CategoryResponse: {
             /** Format: uuid */
             id?: string;
@@ -1596,6 +2455,10 @@ export interface components {
             revokedAt?: string | null;
             valid?: boolean;
         };
+        ChangePasswordRequest: {
+            currentPassword: string;
+            newPassword: string;
+        };
         ChangeThreadStatusRequest: {
             /** @enum {string} */
             status?: "OPEN" | "ANSWERED" | "CLOSED" | "HIDDEN";
@@ -1611,6 +2474,9 @@ export interface components {
             /** Format: uuid */
             parentId?: string | null;
         };
+        CompleteMultipartUploadRequest: {
+            parts?: components["schemas"]["PartRef"][];
+        };
         CourseItemResponse: {
             /** Format: uuid */
             id?: string;
@@ -1619,6 +2485,10 @@ export interface components {
             required?: boolean;
             title?: string;
             type?: string;
+        };
+        /** @description A stated requirement, in the author's words */
+        CoursePrerequisite: {
+            text?: string;
         };
         CourseProgressResponse: {
             complete?: boolean;
@@ -1632,6 +2502,11 @@ export interface components {
             requiredItems?: number;
         };
         CourseResponse: {
+            /**
+             * Format: int32
+             * @description Days of access granted at enrolment; absent means it never lapses
+             */
+            accessDurationDays?: number | null;
             categories?: components["schemas"]["Term"][];
             /** Format: date-time */
             createdAt?: string;
@@ -1652,6 +2527,21 @@ export interface components {
             thumbnailUrl?: string | null;
             title?: string;
         };
+        CreateAdminRequest: {
+            /** Format: email */
+            email: string;
+            /** @description Handed to the new administrator, who changes it themselves */
+            password: string;
+            username: string;
+        };
+        CreateCategoryRequest: {
+            name: string;
+            /**
+             * Format: uuid
+             * @description Null for a top-level category
+             */
+            parentId?: string | null;
+        };
         CreateCourseItemRequest: {
             required?: boolean;
             title: string;
@@ -1659,6 +2549,12 @@ export interface components {
             type?: "LESSON" | "QUIZ" | "ASSIGNMENT";
         };
         CreateCourseRequest: {
+            /**
+             * Format: int32
+             * @description Days of access a student gets on enrolling. Omit or send null for access that never lapses. Applies to enrolments made after the change; nobody already enrolled loses time they were given.
+             * @example 365
+             */
+            accessDurationDays?: number | null;
             description?: string | null;
             language?: string | null;
             /** @enum {string|null} */
@@ -1682,6 +2578,11 @@ export interface components {
             title: string;
             url?: string | null;
         };
+        CreateRoleRequest: {
+            description?: string | null;
+            name: string;
+            permissions?: string[];
+        };
         CreateSectionRequest: {
             description?: string | null;
             title: string;
@@ -1694,6 +2595,18 @@ export interface components {
              */
             lessonId?: string | null;
             title: string;
+        };
+        DirectoryUserResponse: {
+            /** Format: date-time */
+            createdAt?: string;
+            displayName?: string | null;
+            email?: string;
+            /** Format: uuid */
+            id?: string;
+            /** Format: date-time */
+            lastLoginAt?: string | null;
+            status?: string;
+            username?: string;
         };
         DownloadUrlResponse: {
             downloadUrl?: string;
@@ -1768,6 +2681,20 @@ export interface components {
             /** @enum {string} */
             status?: "PUBLISHED" | "PENDING" | "HIDDEN" | "REMOVED";
         };
+        MultipartUploadTicket: {
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: uuid */
+            mediaId?: string;
+            /** Format: int32 */
+            partCount?: number;
+            /**
+             * Format: int64
+             * @description Bytes per part; every part but the last must be exactly this
+             */
+            partSizeBytes?: number;
+            uploadId?: string;
+        };
         NotificationResponse: {
             body?: string | null;
             /** Format: date-time */
@@ -1798,10 +2725,20 @@ export interface components {
             /** Format: int32 */
             totalPages?: number;
         };
+        PartRef: {
+            /** @description Returned by storage in the part's ETag header */
+            etag: string;
+            /** Format: int32 */
+            partNumber?: number;
+        };
         PasswordResetRequest: {
             /** @description At least 12 characters */
             newPassword: string;
             token: string;
+        };
+        PermissionResponse: {
+            code?: string;
+            description?: string;
         };
         PrerequisiteResponse: {
             /** Format: uuid */
@@ -1887,6 +2824,9 @@ export interface components {
             /** @example jane.doe */
             username: string;
         };
+        RenameCategoryRequest: {
+            name: string;
+        };
         /** @description Must list every child exactly once */
         ReorderRequest: {
             orderedIds?: string[];
@@ -1955,6 +2895,24 @@ export interface components {
             studentId?: string;
             title?: string | null;
         };
+        RoleResponse: {
+            description?: string | null;
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            permissions?: string[];
+            slug?: string;
+            /** @description True means every permission, including ones added later */
+            super?: boolean;
+            system?: boolean;
+        };
+        RoleSummary: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            slug?: string;
+            super?: boolean;
+        };
         SaveAssignmentRequest: {
             allowLateSubmission?: boolean | null;
             /** Format: date-time */
@@ -2006,13 +2964,30 @@ export interface components {
             position?: number;
             title?: string;
         };
+        SetAdminStatusRequest: {
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "DISABLED";
+        };
         SetCategoriesRequest: {
             /** @description Replaces the current set; an empty list clears it */
             categoryIds?: string[];
         };
-        SetPrerequisitesRequest: {
+        SetCoursePrerequisitesRequest: {
+            /**
+             * @description Free text, in the order a reader should see it. Replaces the whole list; an empty list clears it.
+             * @example [
+             *       "Basic Python",
+             *       "Comfortable with matrices"
+             *     ]
+             */
+            prerequisites?: string[];
+        };
+        SetItemPrerequisitesRequest: {
             /** @description Replaces the current set; an empty list clears it */
             prerequisiteIds?: string[];
+        };
+        SetRolePermissionsRequest: {
+            permissions?: string[];
         };
         SetTagsRequest: {
             /**
@@ -2026,6 +3001,10 @@ export interface components {
         SetThumbnailRequest: {
             /** Format: uuid */
             mediaId?: string;
+        };
+        SetUserStatusRequest: {
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "DISABLED";
         };
         StudentOptionResponse: {
             /** Format: uuid */
@@ -2113,6 +3092,12 @@ export interface components {
         };
         /** @description Only the fields present are changed */
         UpdateCourseRequest: {
+            /**
+             * Format: int32
+             * @description Days of access a student gets on enrolling. Omit or send null for access that never lapses. Applies to enrolments made after the change; nobody already enrolled loses time they were given.
+             * @example 365
+             */
+            accessDurationDays?: number | null;
             description?: string | null;
             language?: string | null;
             /** @enum {string|null} */
@@ -2133,6 +3118,13 @@ export interface components {
             lastName?: string | null;
             timezone?: string | null;
         };
+        UploadPartUrl: {
+            /** Format: int64 */
+            expiresInSeconds?: number;
+            /** Format: int32 */
+            partNumber?: number;
+            url?: string;
+        };
         /** @description Upload the bytes directly to uploadUrl with HTTP PUT */
         UploadTicketResponse: {
             /** Format: int64 */
@@ -2141,6 +3133,13 @@ export interface components {
             mediaId?: string;
             status?: string;
             uploadUrl?: string;
+        };
+        UploadedPartResponse: {
+            etag?: string;
+            /** Format: int32 */
+            partNumber?: number;
+            /** Format: int64 */
+            sizeBytes?: number;
         };
         UserResponse: {
             /** Format: date-time */
@@ -2169,6 +3168,848 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_4: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    create_4: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResponse"];
+                };
+            };
+        };
+    };
+    get_7: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adminId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResponse"];
+                };
+            };
+        };
+    };
+    assign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adminId: string;
+                roleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adminId: string;
+                roleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setStatus_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adminId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAdminStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResponse"];
+                };
+            };
+        };
+    };
+    list_13: {
+        parameters: {
+            query?: {
+                action?: string;
+                actorId?: string;
+                targetType?: string;
+                targetId?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    login_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokenResponse"];
+                };
+            };
+        };
+    };
+    logout_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    me_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResponse"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    refresh_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokenResponse"];
+                };
+            };
+        };
+    };
+    createCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryResponse"];
+                };
+            };
+        };
+    };
+    deleteCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    renameCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryResponse"];
+                };
+            };
+        };
+    };
+    list_12: {
+        parameters: {
+            query?: {
+                courseId?: string;
+                revoked?: boolean;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    get_6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certificateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCertificateResponse"];
+                };
+            };
+        };
+    };
+    list_11: {
+        parameters: {
+            query?: {
+                q?: string;
+                status?: string;
+                owner?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+    };
+    list_10: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    list_9: {
+        parameters: {
+            query?: {
+                q?: string;
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    delete_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted from the database and from storage */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Something still references this file */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    permissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionResponse"][];
+                };
+            };
+        };
+    };
+    list_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"][];
+                };
+            };
+        };
+    };
+    create_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
+                };
+            };
+        };
+    };
+    delete_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRolePermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
+                };
+            };
+        };
+    };
+    list_8: {
+        parameters: {
+            query?: {
+                userId?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    listAdmins: {
+        parameters: {
+            query?: {
+                adminId?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    revokeAdmin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revokeAllForUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_7: {
+        parameters: {
+            query?: {
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+        };
+    };
+    list_6: {
+        parameters: {
+            query?: {
+                q?: string;
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of users */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+            /** @description The caller lacks user.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_5: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryUserResponse"];
+                };
+            };
+        };
+    };
+    setStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUserStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryUserResponse"];
+                };
+            };
+        };
+    };
     attempt: {
         parameters: {
             query?: never;
@@ -2762,7 +4603,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PrerequisiteResponse"][];
+                    "application/json": components["schemas"]["CoursePrerequisite"][];
                 };
             };
         };
@@ -2778,26 +4619,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SetPrerequisitesRequest"];
+                "application/json": components["schemas"]["SetCoursePrerequisitesRequest"];
             };
         };
         responses: {
-            /** @description The new set */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PrerequisiteResponse"][];
-                };
-            };
-            /** @description The change would create a prerequisite loop */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["CoursePrerequisite"][];
                 };
             };
         };
@@ -3367,6 +5199,35 @@ export interface operations {
             };
         };
     };
+    delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A student has worked on this item */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     get_1: {
         parameters: {
             query?: never;
@@ -3585,6 +5446,28 @@ export interface operations {
             };
         };
     };
+    stream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.apple.mpegurl": string;
+                };
+            };
+        };
+    };
     itemPrerequisites: {
         parameters: {
             query?: never;
@@ -3618,7 +5501,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SetPrerequisitesRequest"];
+                "application/json": components["schemas"]["SetItemPrerequisitesRequest"];
             };
         };
         responses: {
@@ -3927,7 +5810,7 @@ export interface operations {
             };
         };
     };
-    list_3: {
+    list_5: {
         parameters: {
             query?: {
                 unreadOnly?: boolean;
@@ -4055,6 +5938,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadTicketResponse"];
+                };
+            };
+        };
+    };
+    begin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BeginMultipartUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MultipartUploadTicket"];
+                };
+            };
+        };
+    };
+    abort: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    complete_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteMultipartUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description The object is assembled and AVAILABLE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaObjectResponse"];
+                };
+            };
+            /** @description No parts, or the upload already finished */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    parts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadedPartResponse"][];
+                };
+            };
+        };
+    };
+    partUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mediaId: string;
+                partNumber: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPartUrl"];
                 };
             };
         };
@@ -4269,6 +6276,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ReviewResponse"];
                 };
+            };
+        };
+    };
+    deleteSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
