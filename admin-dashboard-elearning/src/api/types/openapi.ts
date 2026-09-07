@@ -2271,10 +2271,43 @@ export interface components {
             studentName?: string | null;
             valid?: boolean;
         };
+        /** @description A course as the dashboard lists it */
+        AdminCourseResponse: {
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: uuid */
+            id?: string;
+            language?: string;
+            level?: string;
+            ownerEmail?: string | null;
+            /** Format: uuid */
+            ownerId?: string;
+            ownerName?: string | null;
+            /** Format: date-time */
+            publishedAt?: string | null;
+            slug?: string;
+            status?: string;
+            title?: string;
+        };
         AdminLoginRequest: {
             /** Format: email */
             email: string;
             password: string;
+        };
+        AdminMediaResponse: {
+            bucket?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: uuid */
+            id?: string;
+            mimeType?: string;
+            originalFilename?: string | null;
+            /** Format: int64 */
+            sizeBytes?: number;
+            status?: string;
+            uploadedBy?: string | null;
+            /** Format: uuid */
+            uploadedById?: string | null;
         };
         AdminRefreshRequest: {
             refreshToken: string;
@@ -2290,6 +2323,28 @@ export interface components {
             roles?: components["schemas"]["RoleSummary"][];
             status?: string;
             username?: string;
+        };
+        AdminSubmissionResponse: {
+            assignmentTitle?: string | null;
+            /** Format: int32 */
+            attemptNumber?: number;
+            /** Format: uuid */
+            courseId?: string | null;
+            /** Format: uuid */
+            courseItemId?: string;
+            courseTitle?: string | null;
+            /** Format: date-time */
+            gradedAt?: string | null;
+            /** Format: uuid */
+            id?: string;
+            score?: number | null;
+            status?: string;
+            studentEmail?: string | null;
+            /** Format: uuid */
+            studentId?: string;
+            studentName?: string | null;
+            /** Format: date-time */
+            submittedAt?: string | null;
         };
         AdminTokenResponse: {
             accessToken?: string;
@@ -2385,6 +2440,27 @@ export interface components {
             /** @description Null while free-text answers await manual grading */
             score?: number | null;
             status?: string;
+        };
+        AuditEntryResponse: {
+            action?: string;
+            /** Format: uuid */
+            actorId?: string | null;
+            /** @description Who the actor was at the time, not who that id resolves to now */
+            actorLabel?: string | null;
+            actorType?: string;
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            id?: string;
+            /** Format: date-time */
+            occurredAt?: string;
+            /** @description Matches the X-Request-Id header and the application logs */
+            requestId?: string | null;
+            summary?: string;
+            /** Format: uuid */
+            targetId?: string | null;
+            targetType?: string | null;
         };
         AuthorQuestionOption: {
             correct?: boolean;
@@ -2643,6 +2719,17 @@ export interface components {
             instructorId?: string;
             role?: string;
         };
+        InstructorRosterEntry: {
+            /** Format: int64 */
+            courseCount?: number;
+            displayName?: string | null;
+            email?: string;
+            /** Format: uuid */
+            id?: string;
+            /** Format: int64 */
+            publishedCourseCount?: number;
+            username?: string;
+        };
         LessonContentUrlResponse: {
             contentUrl?: string;
             /** Format: int64 */
@@ -2709,8 +2796,232 @@ export interface components {
             title?: string;
             type?: string;
         };
-        PageResponse: {
+        PageResponseAdminCertificateResponse: {
+            content?: components["schemas"]["AdminCertificateResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseAdminCourseResponse: {
+            content?: components["schemas"]["AdminCourseResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseAdminMediaResponse: {
+            content?: components["schemas"]["AdminMediaResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseAdminResponse: {
+            content?: components["schemas"]["AdminResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseAdminSubmissionResponse: {
+            content?: components["schemas"]["AdminSubmissionResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseAuditEntryResponse: {
+            content?: components["schemas"]["AuditEntryResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseCourseResponse: {
+            content?: components["schemas"]["CourseResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseDirectoryUserResponse: {
+            content?: components["schemas"]["DirectoryUserResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseEnrollmentResponse: {
+            content?: components["schemas"]["EnrollmentResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseInstructorRosterEntry: {
+            content?: components["schemas"]["InstructorRosterEntry"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseNotificationResponse: {
             content?: components["schemas"]["NotificationResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseReviewResponse: {
+            content?: components["schemas"]["ReviewResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseSessionResponse: {
+            content?: components["schemas"]["SessionResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseSubmissionResponse: {
+            content?: components["schemas"]["SubmissionResponse"][];
+            first?: boolean;
+            last?: boolean;
+            /**
+             * Format: int32
+             * @description Zero-based page index
+             */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+        };
+        PageResponseThreadResponse: {
+            content?: components["schemas"]["ThreadResponse"][];
             first?: boolean;
             last?: boolean;
             /**
@@ -2964,6 +3275,28 @@ export interface components {
             position?: number;
             title?: string;
         };
+        /** @description One live login, not one token */
+        SessionResponse: {
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            /**
+             * Format: int64
+             * @description Refreshes so far - a rough measure of how active the session is
+             */
+            refreshCount?: number;
+            /**
+             * Format: uuid
+             * @description Identifies the session; pass it back to end this one
+             */
+            sessionId?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: uuid */
+            subjectId?: string;
+            subjectLabel?: string | null;
+        };
         SetAdminStatusRequest: {
             /** @enum {string} */
             status: "ACTIVE" | "SUSPENDED" | "DISABLED";
@@ -3186,7 +3519,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAdminResponse"];
                 };
             };
         };
@@ -3327,7 +3660,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAuditEntryResponse"];
                 };
             };
         };
@@ -3534,7 +3867,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAdminCertificateResponse"];
                 };
             };
         };
@@ -3582,7 +3915,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAdminCourseResponse"];
                 };
             };
         };
@@ -3627,7 +3960,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseInstructorRosterEntry"];
                 };
             };
         };
@@ -3652,7 +3985,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAdminMediaResponse"];
                 };
             };
         };
@@ -3815,7 +4148,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseSessionResponse"];
                 };
             };
         };
@@ -3839,7 +4172,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseSessionResponse"];
                 };
             };
         };
@@ -3923,7 +4256,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseAdminSubmissionResponse"];
                 };
             };
         };
@@ -3948,7 +4281,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseDirectoryUserResponse"];
                 };
             };
             /** @description The caller lacks user.read */
@@ -4439,7 +4772,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseCourseResponse"];
                 };
             };
         };
@@ -4743,7 +5076,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseReviewResponse"];
                 };
             };
         };
@@ -4835,7 +5168,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseThreadResponse"];
                 };
             };
         };
@@ -5296,7 +5629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseSubmissionResponse"];
                 };
             };
         };
@@ -5805,7 +6138,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseEnrollmentResponse"];
                 };
             };
         };
@@ -5829,7 +6162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResponse"];
+                    "application/json": components["schemas"]["PageResponseNotificationResponse"];
                 };
             };
         };

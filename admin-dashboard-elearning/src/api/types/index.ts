@@ -25,7 +25,20 @@ export type SetCategoriesRequest = Schemas["SetCategoriesRequest"];
 export type SetTagsRequest = Schemas["SetTagsRequest"];
 export type SetThumbnailRequest = Schemas["SetThumbnailRequest"];
 export type CourseProgressResponse = Schemas["CourseProgressResponse"];
-export type PageResponse<T = CourseResponse> = Omit<Schemas["PageResponse"], "content"> & {
+/**
+ * One page of anything.
+ *
+ * The generated document now names each instantiation separately
+ * (`PageResponseCourseResponse`, `PageResponseSessionResponse`, …), which is
+ * what makes every element type visible at all. The envelope is identical
+ * across all of them, so this borrows one concrete page's shape and swaps the
+ * element type in — pagination stays derived from the spec rather than
+ * hand-copied, while callers keep writing `PageResponse<Whatever>`.
+ */
+export type PageResponse<T = CourseResponse> = Omit<
+  Schemas["PageResponseCourseResponse"],
+  "content"
+> & {
   content?: T[];
 };
 
@@ -155,3 +168,17 @@ export type CreateThreadRequest = Schemas["CreateThreadRequest"];
 export type ThreadDetailResponse = Schemas["ThreadDetailResponse"];
 export type ChangeThreadStatusRequest = Schemas["ChangeThreadStatusRequest"];
 export type AddCommentRequest = Schemas["AddCommentRequest"];
+
+// --- Administration: the directory ----------------------------------------
+// These became expressible only once PageResponse stopped erasing its element
+// type; before that they existed in the API but not in the document.
+export type AdminCourseResponse = Schemas["AdminCourseResponse"];
+export type InstructorRosterEntry = Schemas["InstructorRosterEntry"];
+export type AdminMediaResponse = Schemas["AdminMediaResponse"];
+export type AdminSubmissionResponse = Schemas["AdminSubmissionResponse"];
+
+// --- Administration: accountability ---------------------------------------
+/** One live session. `sessionId` is what ends it. */
+export type SessionResponse = Schemas["SessionResponse"];
+/** One audit record. Append-only: nothing edits or deletes these. */
+export type AuditEntryResponse = Schemas["AuditEntryResponse"];
