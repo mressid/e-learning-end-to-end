@@ -28,11 +28,12 @@ class CourseService(
     private val slugGenerator: SlugGenerator,
     private val mediaService: MediaService,
     private val platformAccess: PlatformAccess,
+    private val users: UserDirectory,
 ) {
 
     @Transactional
-    fun create(command: CreateCourseCommand, ownerId: UUID): Course =
-        courses.save(
+    fun create(command: CreateCourseCommand, ownerId: UUID): Course {
+        val course = courses.save(
             Course(
                 ownerId = ownerId,
                 title = command.title,
@@ -43,6 +44,13 @@ class CourseService(
                 language = command.language ?: "en",
             ).apply { accessDurationDays = command.accessDurationDays },
         )
+        // Authoring a course is what makes someone an instructor, so record it.
+        // Creation is still open to any signed-in learner; this only keeps the
+        // roster honest about who actually authors, now that the roster reads a
+        // flag rather than deriving itself from `courses.owner_id`.
+        users.markAsInstructor(ownerId)
+        return course
+    }
 
     @Transactional(readOnly = true)
     fun getForViewer(courseId: UUID, viewerId: UUID?): Course {

@@ -58,7 +58,7 @@ class AdminAccountService(
         )
         audit.record(
             action = "admin.created",
-            summary = "Created administrator ${'$'}{created.email}",
+            summary = "Created administrator ${created.email}",
             targetType = "ADMIN_USER",
             targetId = created.id,
         )
@@ -78,7 +78,7 @@ class AdminAccountService(
         admin.updatedAt = Instant.now()
         audit.record(
             action = "admin.status_changed",
-            summary = "Changed administrator ${'$'}{admin.email} from ${'$'}previous to ${'$'}status",
+            summary = "Changed administrator ${admin.email} from $previous to $status",
             targetType = "ADMIN_USER",
             targetId = adminUserId,
             details = mapOf("from" to previous.name, "to" to status.name),

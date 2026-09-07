@@ -89,7 +89,7 @@ class AdminRoleApiTest(
             header("Authorization", "Bearer $token")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(16) }
+            jsonPath("$.length()") { value(17) }
         }
         // No create endpoint: an invented code would name an authority that
         // nothing in the application actually checks.

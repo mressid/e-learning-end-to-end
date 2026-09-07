@@ -12,13 +12,13 @@ export interface paths {
             cookie?: never;
         };
         /** List administrators */
-        get: operations["list_4"];
+        get: operations["list_5"];
         put?: never;
         /**
          * Create an administrator
          * @description The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove.
          */
-        post: operations["create_4"];
+        post: operations["create_5"];
         delete?: never;
         options?: never;
         head?: never;
@@ -329,8 +329,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List instructors, busiest first
-         * @description Requires `user.read`. An instructor is someone who owns at least one course - there is no instructor role to enumerate.
+         * List instructors
+         * @description Requires `user.read`. Everyone flagged as an instructor, including those with no courses yet. Pass `q` to match an email or username. Create and edit them through `/api/v1/admin/users`.
          */
         get: operations["list_10"];
         put?: never;
@@ -409,10 +409,10 @@ export interface paths {
             cookie?: never;
         };
         /** List roles */
-        get: operations["list_3"];
+        get: operations["list_4"];
         put?: never;
         /** Create a role */
-        post: operations["create_3"];
+        post: operations["create_4"];
         delete?: never;
         options?: never;
         head?: never;
@@ -590,9 +590,13 @@ export interface paths {
          * List or search learners
          * @description Requires `user.read`. Pass `q` to match an email or username, or `status` to filter; `q` wins if both are given.
          */
-        get: operations["list_6"];
+        get: operations["list_3"];
         put?: never;
-        post?: never;
+        /**
+         * Create an account
+         * @description Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. Set `isInstructor` to let them author courses.
+         */
+        post: operations["create_3"];
         delete?: never;
         options?: never;
         head?: never;
@@ -610,13 +614,17 @@ export interface paths {
          * One learner
          * @description Requires `user.read`.
          */
-        get: operations["get_5"];
+        get: operations["get_4"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit an account
+         * @description Requires `user.write`. Only the fields you send change. Clearing `isInstructor` stops them starting new courses; it does not touch the ones they already own, because ownership is what confers authority over those.
+         */
+        patch: operations["update_3"];
         trace?: never;
     };
     "/api/v1/admin/users/{userId}/status": {
@@ -1722,7 +1730,7 @@ export interface paths {
             cookie?: never;
         };
         /** List your notifications, newest first */
-        get: operations["list_5"];
+        get: operations["list_6"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1992,7 +2000,7 @@ export interface paths {
          * Read a resource
          * @description Its creator, or a participant of a course it is attached to.
          */
-        get: operations["get_4"];
+        get: operations["get_5"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2320,6 +2328,7 @@ export interface components {
             id?: string;
             /** Format: date-time */
             lastLoginAt?: string | null;
+            permissions?: string[];
             roles?: components["schemas"]["RoleSummary"][];
             status?: string;
             username?: string;
@@ -2672,6 +2681,17 @@ export interface components {
             lessonId?: string | null;
             title: string;
         };
+        CreateUserRequest: {
+            /** Format: email */
+            email: string;
+            firstName?: string | null;
+            /** @description May author courses. Not authority over any particular course. */
+            isInstructor?: boolean;
+            lastName?: string | null;
+            /** @description A starting password. Nothing forces a change on first sign-in, so hand it over deliberately. */
+            password: string;
+            username: string;
+        };
         DirectoryUserResponse: {
             /** Format: date-time */
             createdAt?: string;
@@ -2679,6 +2699,7 @@ export interface components {
             email?: string;
             /** Format: uuid */
             id?: string;
+            isInstructor?: boolean;
             /** Format: date-time */
             lastLoginAt?: string | null;
             status?: string;
@@ -3451,6 +3472,16 @@ export interface components {
             lastName?: string | null;
             timezone?: string | null;
         };
+        /** @description Every field optional; only what is sent changes */
+        UpdateUserRequest: {
+            /** Format: email */
+            email?: string | null;
+            firstName?: string | null;
+            /** @description Clearing this does not touch courses they already own */
+            isInstructor?: boolean | null;
+            lastName?: string | null;
+            username?: string | null;
+        };
         UploadPartUrl: {
             /** Format: int64 */
             expiresInSeconds?: number;
@@ -3501,7 +3532,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_4: {
+    list_5: {
         parameters: {
             query?: {
                 page?: number;
@@ -3524,7 +3555,7 @@ export interface operations {
             };
         };
     };
-    create_4: {
+    create_5: {
         parameters: {
             query?: never;
             header?: never;
@@ -3945,6 +3976,7 @@ export interface operations {
     list_10: {
         parameters: {
             query?: {
+                q?: string;
                 page?: number;
                 size?: number;
             };
@@ -4039,7 +4071,7 @@ export interface operations {
             };
         };
     };
-    list_3: {
+    list_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -4059,7 +4091,7 @@ export interface operations {
             };
         };
     };
-    create_3: {
+    create_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -4261,7 +4293,7 @@ export interface operations {
             };
         };
     };
-    list_6: {
+    list_3: {
         parameters: {
             query?: {
                 q?: string;
@@ -4295,7 +4327,40 @@ export interface operations {
             };
         };
     };
-    get_5: {
+    create_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryUserResponse"];
+                };
+            };
+            /** @description That email or username is taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -4305,6 +4370,32 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryUserResponse"];
+                };
+            };
+        };
+    };
+    update_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -6143,7 +6234,7 @@ export interface operations {
             };
         };
     };
-    list_5: {
+    list_6: {
         parameters: {
             query?: {
                 unreadOnly?: boolean;
@@ -6516,7 +6607,7 @@ export interface operations {
             };
         };
     };
-    get_4: {
+    get_5: {
         parameters: {
             query?: never;
             header?: never;

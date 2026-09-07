@@ -139,7 +139,7 @@
   "paths": {
     "/api/v1/admin/admins": {
       "get": {
-        "operationId": "list_4",
+        "operationId": "list_5",
         "parameters": [
           {
             "in": "query",
@@ -189,7 +189,7 @@
       },
       "post": {
         "description": "The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove.",
-        "operationId": "create_4",
+        "operationId": "create_5",
         "requestBody": {
           "content": {
             "application/json": {
@@ -946,9 +946,17 @@
     },
     "/api/v1/admin/instructors": {
       "get": {
-        "description": "Requires `user.read`. An instructor is someone who owns at least one course - there is no instructor role to enumerate.",
+        "description": "Requires `user.read`. Everyone flagged as an instructor, including those with no courses yet. Pass `q` to match an email or username. Create and edit them through `/api/v1/admin/users`.",
         "operationId": "list_10",
         "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "query",
             "name": "page",
@@ -990,7 +998,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "List instructors, busiest first",
+        "summary": "List instructors",
         "tags": [
           "Admin: instructors"
         ]
@@ -1137,7 +1145,7 @@
     },
     "/api/v1/admin/roles": {
       "get": {
-        "operationId": "list_3",
+        "operationId": "list_4",
         "responses": {
           "200": {
             "content": {
@@ -1164,7 +1172,7 @@
         ]
       },
       "post": {
-        "operationId": "create_3",
+        "operationId": "create_4",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1555,7 +1563,7 @@
     "/api/v1/admin/users": {
       "get": {
         "description": "Requires `user.read`. Pass `q` to match an email or username, or `status` to filter; `q` wins if both are given.",
-        "operationId": "list_6",
+        "operationId": "list_3",
         "parameters": [
           {
             "in": "query",
@@ -1628,12 +1636,57 @@
         "tags": [
           "Admin: users"
         ]
+      },
+      "post": {
+        "description": "Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. Set `isInstructor` to let them author courses.",
+        "operationId": "create_3",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryUserResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "That email or username is taken"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create an account",
+        "tags": [
+          "Admin: users"
+        ]
       }
     },
     "/api/v1/admin/users/{userId}": {
       "get": {
         "description": "Requires `user.read`.",
-        "operationId": "get_5",
+        "operationId": "get_4",
         "parameters": [
           {
             "in": "path",
@@ -1663,6 +1716,52 @@
           }
         ],
         "summary": "One learner",
+        "tags": [
+          "Admin: users"
+        ]
+      },
+      "patch": {
+        "description": "Requires `user.write`. Only the fields you send change. Clearing `isInstructor` stops them starting new courses; it does not touch the ones they already own, because ownership is what confers authority over those.",
+        "operationId": "update_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryUserResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Edit an account",
         "tags": [
           "Admin: users"
         ]
@@ -4710,7 +4809,7 @@
     },
     "/api/v1/me/notifications": {
       "get": {
-        "operationId": "list_5",
+        "operationId": "list_6",
         "parameters": [
           {
             "in": "query",
@@ -5314,7 +5413,7 @@
     "/api/v1/resources/{resourceId}": {
       "get": {
         "description": "Its creator, or a participant of a course it is attached to.",
-        "operationId": "get_4",
+        "operationId": "get_5",
         "parameters": [
           {
             "in": "path",
@@ -6203,6 +6302,12 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "roles": {
             "type": "array",
@@ -7256,6 +7361,48 @@
           "title"
         ]
       },
+      "CreateUserRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 1
+          },
+          "firstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isInstructor": {
+            "type": "boolean",
+            "description": "May author courses. Not authority over any particular course."
+          },
+          "lastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "description": "A starting password. Nothing forces a change on first sign-in, so hand it over deliberately.",
+            "maxLength": 128,
+            "minLength": 12
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 3
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "username"
+        ]
+      },
       "DirectoryUserResponse": {
         "type": "object",
         "properties": {
@@ -7275,6 +7422,9 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "isInstructor": {
+            "type": "boolean"
           },
           "lastLoginAt": {
             "type": [
@@ -9340,6 +9490,46 @@
             ],
             "maxLength": 64,
             "minLength": 0
+          }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "description": "Every field optional; only what is sent changes",
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email"
+          },
+          "firstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isInstructor": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Clearing this does not touch courses they already own"
+          },
+          "lastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 50,
+            "minLength": 3
           }
         }
       },

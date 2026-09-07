@@ -1,5 +1,7 @@
 package com.elearning.identity.api
 
+import com.elearning.identity.application.CreateUserCommand
+import com.elearning.identity.application.UpdateUserCommand
 import com.elearning.identity.application.UserDirectoryService
 import com.elearning.identity.domain.User
 import com.elearning.identity.domain.UserProfile
@@ -8,6 +10,7 @@ import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.api.PageResponse
 import com.elearning.shared.errors.ApiError
 import com.elearning.shared.errors.BusinessRuleException
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
@@ -22,7 +25,10 @@ import io.swagger.v3.oas.annotations.Parameter
 import jakarta.validation.constraints.NotBlank
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
+import jakarta.validation.constraints.Email
+import jakarta.validation.constraints.Size
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -41,6 +47,8 @@ data class DirectoryUserResponse(
     val displayName: String?,
     val createdAt: Instant,
     val lastLoginAt: Instant?,
+    @get:JsonProperty("isInstructor")
+    val isInstructor: Boolean,
 ) {
     companion object {
         fun of(user: User, profile: UserProfile?) = DirectoryUserResponse(
@@ -51,9 +59,35 @@ data class DirectoryUserResponse(
             displayName = profile?.displayName,
             createdAt = user.createdAt,
             lastLoginAt = user.lastLoginAt,
+            isInstructor = user.isInstructor,
         )
     }
 }
+
+@Schema(name = "CreateUserRequest")
+data class CreateUserRequest(
+    @field:NotBlank @field:Email val email: String,
+    @field:NotBlank @field:Size(min = 3, max = 50) val username: String,
+    @field:NotBlank @field:Size(min = 12, max = 128)
+    @get:Schema(description = "A starting password. Nothing forces a change on first sign-in, so hand it over deliberately.")
+    val password: String,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    @get:JsonProperty("isInstructor")
+    @get:Schema(description = "May author courses. Not authority over any particular course.")
+    val isInstructor: Boolean = false,
+)
+
+@Schema(name = "UpdateUserRequest", description = "Every field optional; only what is sent changes")
+data class UpdateUserRequest(
+    @field:Email val email: String? = null,
+    @field:Size(min = 3, max = 50) val username: String? = null,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    @get:JsonProperty("isInstructor")
+    @get:Schema(description = "Clearing this does not touch courses they already own")
+    val isInstructor: Boolean? = null,
+)
 
 @Schema(name = "SetUserStatusRequest")
 data class SetUserStatusRequest(
@@ -112,6 +146,60 @@ class AdminUserController(private val directory: UserDirectoryService) {
     @Operation(summary = "One learner", description = "Requires `user.read`.")
     fun get(@PathVariable userId: UUID): DirectoryUserResponse {
         val user = directory.get(userId)
+        return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
+    }
+
+    @PostMapping
+    @Operation(
+        summary = "Create an account",
+        description = "Requires `user.write`. ACTIVE immediately - an administrator typing " +
+            "the address is the verification, so there is no email to wait for. Set " +
+            "`isInstructor` to let them author courses.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Created"),
+        ApiResponse(
+            responseCode = "409",
+            description = "That email or username is taken",
+            content = [Content(schema = Schema(implementation = ApiError::class))],
+        ),
+    )
+    fun create(@Valid @RequestBody request: CreateUserRequest): DirectoryUserResponse {
+        val user = directory.create(
+            CreateUserCommand(
+                email = request.email,
+                username = request.username,
+                password = request.password,
+                firstName = request.firstName,
+                lastName = request.lastName,
+                isInstructor = request.isInstructor,
+            ),
+        )
+        val id = requireNotNull(user.id)
+        return DirectoryUserResponse.of(user, directory.profilesFor(listOf(id))[id])
+    }
+
+    @PatchMapping("/{userId}")
+    @Operation(
+        summary = "Edit an account",
+        description = "Requires `user.write`. Only the fields you send change. Clearing " +
+            "`isInstructor` stops them starting new courses; it does not touch the ones " +
+            "they already own, because ownership is what confers authority over those.",
+    )
+    fun update(
+        @PathVariable userId: UUID,
+        @Valid @RequestBody request: UpdateUserRequest,
+    ): DirectoryUserResponse {
+        val user = directory.update(
+            userId,
+            UpdateUserCommand(
+                email = request.email,
+                username = request.username,
+                firstName = request.firstName,
+                lastName = request.lastName,
+                isInstructor = request.isInstructor,
+            ),
+        )
         return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
     }
 

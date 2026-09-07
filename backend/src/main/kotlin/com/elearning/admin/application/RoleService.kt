@@ -59,7 +59,7 @@ class RoleService(
         replacePermissions(requireNotNull(role.id), codes)
         audit.record(
             action = "role.created",
-            summary = "Created role \"${'$'}name\"",
+            summary = "Created role \"$name\"",
             targetType = "ROLE",
             targetId = role.id,
             details = mapOf("permissions" to codes),
@@ -96,7 +96,7 @@ class RoleService(
         }
         audit.record(
             action = "role.deleted",
-            summary = "Deleted role \"${'$'}{role.name}\"",
+            summary = "Deleted role \"${role.name}\"",
             targetType = "ROLE",
             targetId = roleId,
         )
@@ -121,7 +121,7 @@ class RoleService(
         val grant = adminUserRoles.save(AdminUserRole(id, grantedBy))
         audit.record(
             action = "role.assigned",
-            summary = "Granted role \"${'$'}{role.name}\" to an administrator",
+            summary = "Granted role \"${role.name}\" to an administrator",
             targetType = "ADMIN_USER",
             targetId = adminUserId,
             details = mapOf("roleId" to roleId.toString(), "roleName" to role.name),
@@ -149,7 +149,7 @@ class RoleService(
         refreshTokens.revokeAllForAdmin(adminUserId)
         audit.record(
             action = "role.revoked",
-            summary = "Removed role \"${'$'}{role.name}\" from an administrator",
+            summary = "Removed role \"${role.name}\" from an administrator",
             targetType = "ADMIN_USER",
             targetId = adminUserId,
             details = mapOf("roleId" to roleId.toString(), "roleName" to role.name),

@@ -153,6 +153,10 @@
       "description": "View the student and instructor directories"
     },
     {
+      "code": "user.write",
+      "description": "Create and edit learner and instructor accounts"
+    },
+    {
       "code": "user.suspend",
       "description": "Suspend or reinstate a learner account"
     },

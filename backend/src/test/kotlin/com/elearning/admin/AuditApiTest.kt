@@ -197,6 +197,29 @@ class AuditApiTest(
     }
 
     @Test
+    fun `summaries interpolate their values instead of recording the template`() {
+        // Regression. Every summary in the codebase was written with Kotlin's
+        // ${'$'} escape, which produces a *literal* dollar sign - so the trail
+        // stored `Created role "$name"` rather than the name. It compiled, the
+        // endpoint returned 200, and existing assertions like
+        // `contains("Created role")` passed, because that half of the string was
+        // never the broken half. Only reading a stored row showed it.
+        val su = superToken()
+        val name = "Interpolated ${System.nanoTime()}"
+        mockMvc.post("/api/v1/admin/roles") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $su")
+            content = objectMapper.writeValueAsString(
+                mapOf("name" to name, "permissions" to listOf("audit.read")),
+            )
+        }.andExpect { status { isCreated() } }
+
+        val summary = audit(su, "role.created").get("content").get(0).get("summary").asString()
+        assertThat(summary).contains(name)
+        assertThat(summary).doesNotContain("\${")
+    }
+
+    @Test
     fun `the trail cannot be written to or deleted from`() {
         val su = superToken()
         // A log with a delete button is not evidence of anything, so there is

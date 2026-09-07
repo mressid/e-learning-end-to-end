@@ -1,5 +1,7 @@
 package com.elearning.courses.application
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import java.util.UUID
 
 /**
@@ -21,6 +23,33 @@ interface UserDirectory {
      * already avoids for thumbnails.
      */
     fun summaries(userIds: Collection<UUID>): Map<UUID, UserSummary>
+
+    /**
+     * The people flagged as instructors.
+     *
+     * Asked of identity rather than derived here from `courses.owner_id`, because
+     * since V11 the flag is the fact and ownership is a consequence of it. The
+     * old derivation could not show an instructor who had not started a course
+     * yet, which is exactly the person an administrator has just enrolled.
+     *
+     * Still consumer-declared, so the dependency stays one-directional (§8):
+     * courses asks identity, never the reverse.
+     */
+    fun instructors(term: String?, pageable: Pageable): Page<UserSummary>
+
+    /**
+     * Records that someone authors courses, because they just started one.
+     *
+     * Without this the flag and reality drift apart: anyone may still create a
+     * course, so a self-service author would own courses and yet be missing from
+     * the roster of people who author courses. Flagging on create keeps the two
+     * in agreement and changes nothing about who is *allowed* to author - that
+     * remains open, and gating it is a separate decision.
+     *
+     * Idempotent, and never clears the flag: losing your last course does not
+     * un-appoint you.
+     */
+    fun markAsInstructor(userId: UUID)
 }
 
 data class UserSummary(

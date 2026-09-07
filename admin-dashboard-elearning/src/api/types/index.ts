@@ -124,6 +124,8 @@ export type SetRolePermissionsRequest = Schemas["SetRolePermissionsRequest"];
 // User & content administration
 export type DirectoryUserResponse = Schemas["DirectoryUserResponse"];
 export type SetUserStatusRequest = Schemas["SetUserStatusRequest"];
+export type CreateUserRequest = Schemas["CreateUserRequest"];
+export type UpdateUserRequest = Schemas["UpdateUserRequest"];
 export type AdminCertificateResponse = Schemas["AdminCertificateResponse"];
 export type CreateCategoryRequest = Schemas["CreateCategoryRequest"];
 export type RenameCategoryRequest = Schemas["RenameCategoryRequest"];

@@ -205,7 +205,7 @@ class TaxonomyService(
         }
         audit.record(
             action = "category.deleted",
-            summary = "Deleted category \"${'$'}{category.name}\"",
+            summary = "Deleted category \"${category.name}\"",
             targetType = "CATEGORY",
             targetId = categoryId,
         )

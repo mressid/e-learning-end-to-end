@@ -36,4 +36,22 @@ interface UserRepository : JpaRepository<User, UUID> {
         """,
     )
     fun search(@Param("term") term: String, pageable: Pageable): Page<User>
+
+    /**
+     * The instructor roster.
+     *
+     * Backed by the partial index from V11, so this reads only the flagged rows
+     * rather than scanning a user table that is mostly learners.
+     */
+    fun findByIsInstructorTrue(pageable: Pageable): Page<User>
+
+    @Query(
+        """
+        select u from User u
+        where u.isInstructor = true
+          and (lower(u.email) like lower(concat('%', :term, '%'))
+            or lower(u.username) like lower(concat('%', :term, '%')))
+        """,
+    )
+    fun searchInstructors(@Param("term") term: String, pageable: Pageable): Page<User>
 }

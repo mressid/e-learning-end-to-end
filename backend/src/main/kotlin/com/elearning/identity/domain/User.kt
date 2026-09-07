@@ -32,6 +32,17 @@ class User(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: UserStatus = UserStatus.PENDING,
+
+    /**
+     * May author courses.
+     *
+     * Deliberately not authority over any *particular* course - that is still
+     * ownership or co-instructorship (§11). This answers only "may this person
+     * start one", which no relationship can express, because the course does not
+     * exist yet to have a relationship with.
+     */
+    @Column(name = "is_instructor", nullable = false)
+    var isInstructor: Boolean = false,
 ) {
     @Id
     @GeneratedValue

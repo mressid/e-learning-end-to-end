@@ -15,6 +15,9 @@ import {
   type SessionListParams,
   type SubmissionListParams,
   type UserListParams,
+  type InstructorListParams,
+  type CreateUserRequest,
+  type UpdateUserRequest,
   type SetUserStatusRequest,
   type SetAdminStatusRequest,
 } from "@/api";
@@ -70,7 +73,34 @@ export function useSetUserStatusMutation() {
   });
 }
 
-export function useAdminInstructorsQuery(params?: PageParams, enabled = true) {
+export function useCreateUserMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateUserRequest) => adminDirectoryApi.createUser(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users.all });
+      // A new instructor belongs on the roster immediately, before they have
+      // authored anything.
+      queryClient.invalidateQueries({ queryKey: ["admin", "instructors"] });
+    },
+  });
+}
+
+export function useUpdateUserMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, ...body }: UpdateUserRequest & { userId: string }) =>
+      adminDirectoryApi.updateUser(userId, body),
+    onSuccess: (updated, { userId }) => {
+      queryClient.setQueryData(queryKeys.admin.users.detail(userId), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users.all });
+      // Promoting or demoting changes who is on the roster.
+      queryClient.invalidateQueries({ queryKey: ["admin", "instructors"] });
+    },
+  });
+}
+
+export function useAdminInstructorsQuery(params?: InstructorListParams, enabled = true) {
   return useQuery({
     queryKey: queryKeys.admin.instructors(params),
     queryFn: () => adminDirectoryApi.listInstructors(params),

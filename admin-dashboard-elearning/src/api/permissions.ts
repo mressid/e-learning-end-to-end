@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   COURSE_DELETE: "course.delete",
   CATEGORY_MANAGE: "category.manage",
   USER_READ: "user.read",
+  USER_WRITE: "user.write",
   USER_SUSPEND: "user.suspend",
   CERTIFICATE_READ: "certificate.read",
   CERTIFICATE_REVOKE: "certificate.revoke",

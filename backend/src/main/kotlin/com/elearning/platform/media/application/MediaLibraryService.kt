@@ -68,7 +68,7 @@ class MediaLibraryService(
         // which is not.
         audit.record(
             action = "media.deleted",
-            summary = "Deleted file ${'$'}{record.originalFilename ?: mediaId}",
+            summary = "Deleted file ${record.originalFilename ?: mediaId}",
             targetType = "MEDIA",
             targetId = mediaId,
             details = mapOf("bucket" to record.bucket, "sizeBytes" to record.sizeBytes),

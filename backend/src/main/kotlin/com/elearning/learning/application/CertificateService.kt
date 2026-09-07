@@ -78,7 +78,7 @@ class CertificateService(
         certificate.revoke()
         audit.record(
             action = "certificate.revoked",
-            summary = "Revoked certificate ${'$'}{certificate.certificateNumber}",
+            summary = "Revoked certificate ${certificate.certificateNumber}",
             targetType = "CERTIFICATE",
             targetId = certificateId,
             details = mapOf("courseId" to certificate.courseId.toString()),

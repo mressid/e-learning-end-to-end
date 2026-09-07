@@ -14,6 +14,12 @@ import org.springframework.data.repository.query.Param
 import java.util.UUID
 
 /** Projection for the instructor roster. */
+interface OwnerCounts {
+    val instructorId: UUID
+    val courseCount: Long
+    val publishedCount: Long
+}
+
 interface InstructorRow {
     val instructorId: UUID
     val courseCount: Long
@@ -44,6 +50,25 @@ interface CourseRepository : JpaRepository<Course, UUID> {
         countQuery = "select count(distinct c.ownerId) from Course c",
     )
     fun findOwners(pageable: Pageable): Page<InstructorRow>
+
+    /**
+     * Course counts for a page of instructors, in one grouped query.
+     *
+     * Replaces a `countByOwnerAndStatus` per row - twenty instructors meant
+     * forty queries, which is the N+1 the roster already avoided for names.
+     */
+    @Query(
+        """
+        select c.ownerId as instructorId,
+               count(c) as courseCount,
+               sum(case when c.status = com.elearning.courses.domain.CourseStatus.PUBLISHED
+                        then 1L else 0L end) as publishedCount
+        from Course c
+        where c.ownerId in :ownerIds
+        group by c.ownerId
+        """,
+    )
+    fun countsForOwners(@Param("ownerIds") ownerIds: Collection<UUID>): List<OwnerCounts>
 
     /**
      * Title search across **every** status, for the dashboard.

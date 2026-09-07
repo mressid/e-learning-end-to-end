@@ -209,7 +209,7 @@ class AdminDirectoryApiTest(
     // ---- the instructor roster -------------------------------------------
 
     @Test
-    fun `the roster is derived from course ownership, not from a role`() {
+    fun `authoring a course puts a learner on the roster`() {
         val (_, teacher) = learner("teacher")
         repeat(2) {
             mockMvc.post("/api/v1/courses") {
@@ -227,10 +227,17 @@ class AdminDirectoryApiTest(
         val content = objectMapper.readTree(body).get("content")
         val counts = (0 until content.size()).map { content.get(it).get("courseCount").asInt() }
         assertThat(counts).isNotEmpty()
-        // Busiest first, and everyone listed owns something - a learner who owns
-        // no course is not an instructor.
-        assertThat(counts).isSortedAccordingTo(reverseOrder())
-        assertThat(counts).allMatch { it > 0 }
+        // Since V11 the roster reads `users.is_instructor` rather than deriving
+        // itself from `courses.owner_id`, so creating a course sets the flag.
+        // Without that the two would disagree: creation is still open to any
+        // learner, and a self-service author would own courses while being
+        // absent from the list of people who author courses.
+        //
+        // The counts are therefore no longer all positive - an instructor an
+        // administrator added has not started anything yet. That absence is the
+        // point of the change, so it is asserted in AdminInstructorApiTest
+        // rather than excluded here.
+        assertThat(counts).anyMatch { it > 0 }
     }
 
     @Test

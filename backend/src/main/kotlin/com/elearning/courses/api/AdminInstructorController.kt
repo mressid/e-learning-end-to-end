@@ -1,7 +1,6 @@
 package com.elearning.courses.api
 
 import com.elearning.courses.application.UserDirectory
-import com.elearning.courses.domain.CourseStatus
 import com.elearning.courses.infrastructure.CourseRepository
 import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.api.PageResponse
@@ -33,10 +32,19 @@ data class InstructorRosterEntry(
 /**
  * The instructor roster, for the dashboard's `/instructors` page.
  *
- * Derived from **course ownership**, not from a role: instructor-ness on this
- * platform is a relationship, and there is no column that says otherwise (§11).
- * Served from `courses` because that is the module owning the relationship;
- * identity is reached through the `UserDirectory` port for names only.
+ * Listed from the `users.is_instructor` flag added in V11, not derived from
+ * course ownership as it was before. The derivation read well but could not show
+ * someone an administrator had just enrolled and who had not started a course
+ * yet - which is precisely the person you look for after adding them.
+ *
+ * The flag is *not* authority over any particular course. That is still
+ * ownership or co-instructorship (§11); this only says who may start one, which
+ * no relationship can express because the course does not exist yet.
+ *
+ * Still served from `courses`, because the counts are its data and the
+ * `UserDirectory` port keeps the module dependency one-directional (§8).
+ * Creating and editing these accounts lives in `identity`, under
+ * `/api/v1/admin/users`, since that is the module that owns the row.
  */
 @RestController
 @RequestMapping("/api/v1/admin/instructors")
@@ -50,33 +58,37 @@ class AdminInstructorController(
 
     @GetMapping
     @Operation(
-        summary = "List instructors, busiest first",
-        description = "Requires `user.read`. An instructor is someone who owns at least " +
-            "one course - there is no instructor role to enumerate.",
+        summary = "List instructors",
+        description = "Requires `user.read`. Everyone flagged as an instructor, including " +
+            "those with no courses yet. Pass `q` to match an email or username. " +
+            "Create and edit them through `/api/v1/admin/users`.",
     )
     @Transactional(readOnly = true)
     fun list(
+        @RequestParam(required = false) q: String?,
         @RequestParam(defaultValue = "0") @Min(0) page: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
     ): PageResponse<InstructorRosterEntry> {
         platformAccess.require("user.read")
 
-        val rows = courses.findOwners(PageRequest.of(page, size))
-        // One lookup for the whole page rather than a name query per row.
-        val people = directory.summaries(rows.content.map { it.instructorId })
+        val people = directory.instructors(q, PageRequest.of(page, size))
+        // Counts for the whole page in one grouped query. Someone with no
+        // courses simply has no row here, and reads as zero.
+        val counts = if (people.isEmpty) {
+            emptyMap()
+        } else {
+            courses.countsForOwners(people.content.map { it.id }).associateBy { it.instructorId }
+        }
 
-        return PageResponse.from(rows) { row ->
-            val person = people[row.instructorId]
+        return PageResponse.from(people) { person ->
+            val row = counts[person.id]
             InstructorRosterEntry(
-                id = row.instructorId,
-                email = person?.email ?: "",
-                username = person?.username ?: "",
-                displayName = person?.displayName,
-                courseCount = row.courseCount,
-                publishedCourseCount = courses.countByOwnerAndStatus(
-                    row.instructorId,
-                    CourseStatus.PUBLISHED,
-                ),
+                id = person.id,
+                email = person.email,
+                username = person.username,
+                displayName = person.displayName,
+                courseCount = row?.courseCount ?: 0,
+                publishedCourseCount = row?.publishedCount ?: 0,
             )
         }
     }
