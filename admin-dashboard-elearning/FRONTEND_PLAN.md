@@ -48,41 +48,88 @@ simply invisible to the rest of the app.
 
 ---
 
-## 1. Point authentication at the admin surface
+## 1. Point authentication at the admin surface — **done**
 
-`src/api/endpoints/auth.api.ts` calls `/api/v1/auth/login`, and `client.ts`
-refreshes against `/api/v1/auth/refresh`. Those are the **learner** endpoints.
+The dashboard signed in at `/api/v1/auth/login` and refreshed at
+`/api/v1/auth/refresh`. Those are the **learner** endpoints, and no amount of
+work above them would have helped: tokens carry a `typ` claim, so a learner
+token is refused on every `/admin/**` route. Verified against the running
+backend rather than assumed:
 
-Administrators are a separate table with a separate sign-in:
+| check | result |
+|---|---|
+| `POST /api/v1/admin/auth/login` | 200, 16 permissions, `typ=admin`, 16 scope codes |
+| `GET /api/v1/admin/auth/me` | 200, role `super-admin` |
+| admin token → `GET /api/v1/me` | **401** |
+| anonymous → `GET /api/v1/admin/users` | **401** |
+| admin token → `GET /api/v1/admin/users` | **200** |
+| refresh, first use | 200, token rotated, permissions recomputed |
+| refresh, replayed | **401** — *and the rotated token died with it* |
+| logout, then refresh | 204, then **401** |
 
-```
-POST /api/v1/admin/auth/login      → accessToken, refreshToken, permissions[]
-POST /api/v1/admin/auth/refresh
-POST /api/v1/admin/auth/logout
-GET  /api/v1/admin/auth/me         → the admin, with roles
-POST /api/v1/admin/auth/me/password
-```
+What changed:
 
-This is not a cosmetic swap. Tokens carry a `typ` claim, and the backend refuses
-a learner token on every `/admin/**` route — so the dashboard cannot work at all
-until this changes. A learner token reaching an admin endpoint gets **403**, and
-an admin token reaching `/api/v1/me` gets **401**.
+- `src/api/endpoints/admin-auth.api.ts` replaces `auth.api.ts`, which was
+  deleted rather than kept. Every call in it (register, verify-email, password
+  reset, `/me/profile`) is a learner route with no administrator equivalent —
+  leaving it exported would have invited a page to be built on a 401.
+- `client.ts` refreshes at `/api/v1/admin/auth/refresh` and no longer attempts a
+  refresh when the failure came from the auth surface itself.
+- **The token keys changed** to `lernova_admin_access_token` /
+  `lernova_admin_refresh_token`. Sharing the learner app's key names on one
+  origin meant a stale learner token would be sent to `/admin/**` and 403 every
+  call, with nothing on screen explaining why. Anyone signed in under the old
+  keys is signed out once, by design.
 
-Seeded super admin for local work: `admin@elearning.local`. The password was
-rotated out of the default; if the app logs *"the seeded super admin still has
-the default development password"* at startup, it is still `change this password
-now`.
+### Refresh is single-use — confirmed the hard way
 
-### Refresh is single-use
+Row 8 of that table is the one that matters. Replaying a spent refresh token
+returned 401 *and killed the token that legitimately replaced it* — the whole
+family is revoked as suspected theft. So two parallel 401s that each trigger a
+refresh will sign the user out. `client.ts` holds a single in-flight
+`refreshPromise` that concurrent callers await; that is load-bearing, not tidy.
 
-`client.ts` already refreshes on 401 — check it does so **once** and queues
-concurrent failures. Each refresh token works exactly once and returns its
-replacement; presenting a spent one **revokes the entire session** as suspected
-theft. Two parallel 401s that both refresh will log the user out.
+### Session lifecycle
+
+- `__root.tsx` has a `beforeLoad` guard: no admin token → `/login`, carrying
+  `?redirect=` so sign-in resumes where the user was going. It is **client-side
+  only**, because the token lives in localStorage and guarding during SSR would
+  redirect every first paint to the sign-in page.
+- The guard checks `typ=admin`, not merely that a token exists. A learner token
+  in localStorage is not a session here whatever its presence suggests.
+- The sign-in page only accepts a redirect target beginning with `/`. An
+  absolute URL from the query string would be an open redirect.
+- `client.ts` dispatches `lernova:auth-expired` on **every** failed-refresh path
+  — including having no refresh token at all, which previously returned silently
+  and left the user on a dashboard 401ing in the background.
+
+### Not verified
+
+The guard's redirect happens on hydration, so it was not exercised end to end —
+SSR was confirmed to render `/`, `/courses` and `/login` at 200 without
+crashing, and the redirect logic itself is only typechecked. Worth one manual
+pass in a browser.
+
+The sign-in form no longer prefills credentials; the "demo admin" button fills
+the **seeded** pair (`admin@elearning.local` / `change this password now`). On
+this machine that password has been rotated, so the button will not work here
+until it is changed back or the button is updated.
 
 ---
 
-## 2. Drive the UI from `permissions[]`
+## 2. Drive the UI from `permissions[]` — plumbing done, pages pending
+
+`src/api/permissions.ts` and the `usePermissions()` hook exist:
+`has(PERMISSIONS.COURSE_WRITE)` / `hasAny(...)`. Nothing consumes them yet — that
+happens per page in step 3.
+
+They read the **access token's `scope` claim**, not the `permissions[]` array
+returned by login. Same codes, but the claim is what the backend itself reads to
+allow or refuse, it survives a page reload without a fetch, and a refresh
+reissues it with permissions as they stand — so a role change reaches a
+signed-in administrator on its own. Confirmed on this backend: a super admin's
+scope is expanded server-side to all 16 codes, so there is no "is super" case to
+special-case on the client.
 
 Login returns the administrator's permission codes. There are 16, all enforced
 server-side:

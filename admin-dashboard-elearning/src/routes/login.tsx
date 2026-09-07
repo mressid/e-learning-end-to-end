@@ -31,6 +31,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/login")({
+  // The root guard appends where the user was headed. Anything else in the
+  // query string is ignored rather than trusted.
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+    const target = search["redirect"];
+    return typeof target === "string" ? { redirect: target } : {};
+  },
   head: () => ({
     meta: [
       { title: "Sign in — Lernova" },
@@ -50,9 +56,10 @@ function LoginPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
+  const { redirect } = Route.useSearch();
 
-  const [email, setEmail] = useState("admin@lernova.edu");
-  const [password, setPassword] = useState("Password123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -70,16 +77,21 @@ function LoginPage() {
 
     try {
       await loginMutation.mutateAsync({ email, password });
-      navigate({ to: "/" });
+      // Only ever resume to somewhere in this app — an absolute URL from the
+      // query string would be an open redirect.
+      const target = redirect && redirect.startsWith("/") ? redirect : "/";
+      navigate({ to: target });
     } catch (err: unknown) {
       const apiErr = parseApiError(err);
       setErrorMessage(apiErr.message || "Failed to sign in. Please verify your credentials.");
     }
   };
 
+  // The super admin seeded by V6 for local work. Filled in on request rather
+  // than prefilled, so a deployed build never ships credentials in its inputs.
   const handleQuickFill = () => {
-    setEmail("admin@lernova.edu");
-    setPassword("Password123!");
+    setEmail("admin@elearning.local");
+    setPassword("change this password now");
     setErrorMessage("");
   };
 

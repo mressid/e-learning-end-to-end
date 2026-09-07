@@ -1,4 +1,4 @@
-export * from "./auth.api";
+export * from "./admin-auth.api";
 export * from "./courses.api";
 export * from "./taxonomy.api";
 export * from "./notifications.api";

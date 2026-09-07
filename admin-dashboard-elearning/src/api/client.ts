@@ -6,8 +6,13 @@ export const API_BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.["VITE_API_BASE_URL"]) ||
   "http://localhost:8081";
 
-export const ACCESS_TOKEN_KEY = "lernova_access_token";
-export const REFRESH_TOKEN_KEY = "lernova_refresh_token";
+// Deliberately not the learner app's key names. This dashboard stores an
+// administrator's token (`typ=admin`), which the backend refuses on learner
+// routes just as it refuses a learner's here. Sharing a key would let a stale
+// learner token from the same origin be sent to /admin/** and 403 every call,
+// with nothing on screen to say why.
+export const ACCESS_TOKEN_KEY = "lernova_admin_access_token";
+export const REFRESH_TOKEN_KEY = "lernova_admin_refresh_token";
 
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -49,6 +54,20 @@ export function clearTokens() {
   }
 }
 
+export const AUTH_EXPIRED_EVENT = "lernova:auth-expired";
+
+/** Drop the session and tell the app to send the user back to sign-in. */
+function endSession(): null {
+  clearTokens();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  }
+  return null;
+}
+
+// One refresh at a time. Admin refresh tokens rotate on use and a reused one is
+// treated as theft — the backend revokes the whole family. Two 401s racing into
+// two refreshes would do exactly that to a legitimate session.
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
@@ -56,40 +75,29 @@ async function refreshAccessToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      clearTokens();
-      return null;
-    }
+    if (!refreshToken) return endSession();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/admin/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       });
 
-      if (!response.ok) {
-        clearTokens();
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("lernova:auth-expired"));
-        }
-        return null;
-      }
+      if (!response.ok) return endSession();
 
       const data = await response.json();
-      if (data?.accessToken) {
-        setTokens({
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        });
-        return data.accessToken as string;
-      }
+      if (!data?.accessToken) return endSession();
 
-      clearTokens();
-      return null;
+      setTokens({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
+      return data.accessToken as string;
     } catch {
-      clearTokens();
-      return null;
+      // A network failure is not proof the session is gone, but there is no
+      // usable access token either way and the sign-in screen is recoverable.
+      return endSession();
     } finally {
       refreshPromise = null;
     }
@@ -119,7 +127,9 @@ const authAndI18nMiddleware: Middleware = {
   },
 
   async onResponse({ request, response }) {
-    if (response.status === 401 && !request.url.includes("/api/v1/auth/")) {
+    // Never try to refresh a failure from the auth surface itself: a bad
+    // password would spend the refresh token, and refresh is single use.
+    if (response.status === 401 && !request.url.includes("/api/v1/admin/auth/")) {
       const newAccessToken = await refreshAccessToken();
       if (newAccessToken) {
         const retryRequest = new Request(request.url, {

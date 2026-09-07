@@ -3,6 +3,8 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  redirect,
+  useNavigate,
   useRouter,
   useRouterState,
   HeadContent,
@@ -17,6 +19,9 @@ import { AppSidebar } from "@/components/dashboard/AppSidebar";
 import { Topbar } from "@/components/dashboard/Topbar";
 import { ThemeProvider } from "@/lib/theme";
 import { LanguageProvider } from "@/lib/i18n";
+import { AUTH_EXPIRED_EVENT, getAccessToken, isAdminToken } from "@/api";
+
+const LOGIN_PATH = "/login";
 
 function NotFoundComponent() {
   return (
@@ -79,6 +84,36 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  /**
+   * Keep the dashboard behind a session.
+   *
+   * The token lives in localStorage, which does not exist while rendering on
+   * the server — so this only decides anything in the browser. Guarding during
+   * SSR would redirect every first paint to the sign-in page. The pages behind
+   * it call an API that refuses anonymous requests regardless; this exists so
+   * the user sees a sign-in form instead of a screen of failed queries.
+   */
+  beforeLoad: ({ location }) => {
+    if (typeof window === "undefined") return;
+
+    const token = getAccessToken();
+    // A learner token here is not a session, whatever localStorage thinks: the
+    // backend rejects `typ=user` on every /admin route.
+    const signedIn = Boolean(token) && isAdminToken(token);
+    const atLogin = location.pathname === LOGIN_PATH;
+
+    if (!signedIn && !atLogin) {
+      throw redirect({
+        to: LOGIN_PATH,
+        // Remember where they were headed so sign-in can finish the journey.
+        search: { redirect: location.href },
+      });
+    }
+
+    if (signedIn && atLogin) {
+      throw redirect({ to: "/" });
+    }
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -149,8 +184,24 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isAuth = pathname === "/login";
+  const isAuth = pathname === LOGIN_PATH;
+
+  // The API client raises this when a refresh fails, which can happen long after
+  // the last navigation. Without it the user sits on a dashboard whose every
+  // request is quietly 401ing.
+  useEffect(() => {
+    const onExpired = () => {
+      if (window.location.pathname === LOGIN_PATH) return;
+      // Path and query only. An absolute URL is rejected by the sign-in page's
+      // open-redirect guard, which would quietly lose where the user was.
+      const from = `${window.location.pathname}${window.location.search}`;
+      navigate({ to: LOGIN_PATH, search: { redirect: from } });
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, [navigate]);
 
   return (
     <QueryClientProvider client={queryClient}>
