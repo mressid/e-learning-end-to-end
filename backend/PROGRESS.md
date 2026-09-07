@@ -791,6 +791,17 @@ is carried into the exception rather than dropped for the status code.
   had no such check: whether `apk add ffmpeg` resolves, whether the binary is on
   PATH for the JVM's ProcessBuilder, and whether `/tmp/transcode` is writable by
   the unprivileged user are all assumptions.
+- **The compose `transcode-worker` would not start as written**, and this is
+  known rather than suspected. It carries `env_file: .env`, which sets host-side
+  ports (`POSTGRES_PORT=5433`, `MINIO_API_PORT=9100`) for services bound to
+  `127.0.0.1`, and never sets `DB_URL`, `REDIS_HOST`, `RABBITMQ_HOST` or
+  `STORAGE_ENDPOINT` — the dev profile derives those from `localhost`, which
+  inside a container is the container itself. The worker runs under `prod`,
+  which has no defaults for any of the 16 required variables, so it would fail
+  at startup on a missing `DB_URL`. Containerising means service names and
+  container-internal ports (`postgres:5432`, `minio:9000`), not the shifted host
+  ones. Left as-is deliberately while the application runs on the host; it is
+  the first thing to fix when the images are built.
 - `application-prod.yaml` has never been loaded — no prod-profile startup. This
   matters more now: Mailgun's fail-at-startup check only fires under a real boot,
   and prod is the profile that has no `.env` to fall back on.
