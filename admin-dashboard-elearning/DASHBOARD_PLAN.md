@@ -1,32 +1,34 @@
 # Dashboard — what is real and what is scenery
 
-Follows on from `FRONTEND_PLAN.md`, whose steps 0 and 1 are done: the OpenAPI
-contract is current, and the dashboard signs in as an administrator.
-
-This is the survey of what remains. The headline: **7 of 13 routes are a
-placeholder component**, and the two largest real pages are substantially
-mock data.
+Follows on from `FRONTEND_PLAN.md`. All phases below are now done; this is kept
+as the record of what was found and what was decided.
 
 ---
 
-## The current state, measured
+## Where it started, and where it is
 
-| Route | Lines | API calls | What it actually is |
-| --- | ---: | ---: | --- |
-| `/` | 663 | 2 | Mock. Revenue, devices, weekly traffic and "upcoming" are literals |
-| `/courses` | 624 | 18 | Real |
-| `/courses/$courseId` | 992 | 24 | Real |
-| `/settings` | 199 | 0 | Theme + language + three switches that persist nowhere |
-| `/students` | 17 | 0 | `PlaceholderPage` |
-| `/instructors` | 19 | 0 | `PlaceholderPage` |
-| `/certificates` | 19 | 0 | `PlaceholderPage` |
-| `/analytics` | 17 | 0 | `PlaceholderPage` |
-| `/messages` | 17 | 0 | `PlaceholderPage` |
-| `/schedule` | 17 | 0 | `PlaceholderPage` |
-| `/support` | 17 | 0 | `PlaceholderPage` |
+| Route | Was | Now |
+| --- | --- | --- |
+| `/` | 663 lines, 2 API calls, invented revenue | 239 lines, every figure from an endpoint |
+| `/analytics` | placeholder | real counts, and a statement of what is not measured |
+| `/students` | placeholder | search, filter, suspend/reinstate, sign-out-everywhere |
+| `/instructors` | placeholder | roster, read-only by necessity |
+| `/certificates` | placeholder | list, filter, revoke behind a confirmation |
+| `/settings` | theme, language, 3 switches saving nowhere | + password, sessions, roles, admins, audit |
+| `/courses`, `/courses/$id` | real | unchanged, one latent bug fixed |
+| `/schedule`, `/messages`, `/support` | placeholder | stated as not built, out of the nav |
 
-The backend exposes **36 admin endpoints**. The dashboard currently calls
-**five** of them, all under `/admin/auth`.
+The backend exposes **36 admin endpoints**. The dashboard called **five**. It
+now calls **all 36** — 35 through the generated client, plus
+`/admin/auth/refresh`, which `client.ts` calls with a raw `fetch` on purpose so
+a 401 refresh cannot recurse through its own middleware.
+
+**Verified end to end.** A throwaway role holding only `certificate.read` was
+created, granted to a throwaway administrator, and used to sign in: the token's
+scope claim carried exactly `certificate.read`, `/admin/certificates` answered
+200, and users, courses, audit, sessions, roles and admins all answered 403.
+That is precisely the split `usePermissions()` renders against. Both fixtures
+were deleted afterwards.
 
 ---
 
@@ -49,12 +51,15 @@ live session. There is no table for it either.
 
 **`/support`** — no ticketing, no contact model.
 
-Options, in order of honesty: drop them from the navigation; or keep the routes
-with a stated "not built" panel rather than a title over blank space, which is
-what `PlaceholderPage` renders today. **Recommendation: drop `/schedule` and
-`/support` from the nav, and re-point `/messages` at per-course moderation from
-inside a course** — the moderation queue the permission implies. Building three
-backends is a separate project.
+**Settled: all three are out of the navigation, and the routes now say what is
+missing and what building it would take.** They still resolve, so existing links
+do not 404, but they no longer render a title over blank space — the difference
+between "no data yet" and "this feature does not exist" is the difference
+between waiting and investigating.
+
+The topbar's bell went with them: no click handler, and a permanently lit unread
+dot over an endpoint that answers 401 to every administrator. The global search
+box went too — no handler, and no cross-entity search endpoint to give it.
 
 ---
 
@@ -113,8 +118,8 @@ In dependency order, each shippable on its own:
 3. ~~**`/certificates`**~~ — **done.** Validity filter and revoke, behind a
    confirmation stating that verification starts reporting it revoked, the
    record is kept, and there is no undo.
-4. **`/analytics`** — rebuild on `GET /admin/courses/stats` plus real counts.
-   Whatever it cannot source, it should not display. **Next.**
+4. ~~**`/analytics`**~~ — **done.** Real counts only, with an explicit note on
+   what the platform does not measure.
 
 Two defects surfaced while building these:
 
@@ -128,7 +133,7 @@ Two defects surfaced while building these:
 Shared pieces now available: `PageHeader`, `PermissionGate`, `Pager`,
 `StatusBadge`, `lib/format.ts`.
 
-## Phase C — `/` (the dashboard home)
+## Phase C — `/` (the dashboard home) — **done**
 
 663 lines of which almost all the numbers are invented — revenue figures, device
 splits, weekly traffic, an "upcoming" list. `/admin/courses/stats` gives counts
@@ -138,7 +143,7 @@ by status; learner and certificate counts come from their list endpoints.
 payment table. The revenue chart is not stale, it is fiction, and it should be
 deleted rather than re-plumbed.
 
-## Phase D — `/settings`
+## Phase D — `/settings` — **done**
 
 Currently theme, language, and three notification switches that save nowhere.
 It should host what the API actually offers:
@@ -153,7 +158,7 @@ It should host what the API actually offers:
 
 The three fake switches should go, or be stated as not yet wired.
 
-## Phase E — permission gating
+## Phase E — permission gating — **done**
 
 `usePermissions()` exists and nothing consumes it. Once the pages are real, the
 nav and their actions hide what this administrator cannot do. Courtesy, not
@@ -166,3 +171,43 @@ all.
 
 A → B1 → B2 → B3 → B4 → C → D → E, committing each. Phase A is the only hard
 prerequisite; after it, any page can be taken in isolation.
+
+
+---
+
+## Two backend defects found by building against it
+
+Both were invisible from the backend's own tests, which pass either way, and
+both were found by checking generated types against the live server.
+
+**1. `@Schema(name = "PageResponse")` erased every element type.** Pinning one
+name to a generic class collapses all instantiations into one schema. The
+document claimed every paged endpoint returned the same content, and any DTO
+appearing *only* as page content was never emitted at all. Removing it took the
+document from 107 schemas to 127.
+
+**2. springdoc and Jackson disagreed about Kotlin's `is` prefix.** springdoc
+applied the Java bean convention and documented `isSuper` as `super`; Jackson
+serialises `isSuper`. Seven properties across six DTOs were affected. A client
+generated from that document reads a field the server never sends and gets
+`undefined`, silently — and it already was: `courses.$courseId.tsx` tested
+`item.required`, so the "Required" badge could never appear. Fixed with explicit
+`@get:JsonProperty`, which leaves the wire format untouched.
+
+Both are documentation-only changes. `AdminCertificateResponse.valid` and
+`CertificateVerificationResponse.valid` were checked and left alone — those
+fields are genuinely named `valid`.
+
+## What is still worth doing
+
+- **Media library** — `admin-catalog` wires `GET /admin/media` and
+  `DELETE /admin/media/{id}`, and nothing renders them yet. `media.read` and
+  `media.delete` are enforced and unused.
+- **Submissions** — same: wired, unrendered, `submission.read` unused.
+- **Categories** — `category.manage` has a full client and no UI.
+- **Course prerequisites** — free text now; the course editor does not expose
+  them.
+- **Resumable upload** — the five multipart routes are typed and unused; the
+  course editor still has no upload control.
+- **A browser pass.** Everything here is verified by typecheck, build, rendered
+  markup and live API calls. Nothing has been clicked.
