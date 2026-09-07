@@ -1,0 +1,49 @@
+# The transcoding worker.
+#
+# Same application jar as the API, a different runtime image and a different
+# job. FFmpeg is roughly 100MB of native binary that the API never invokes, so
+# baking it into that image would make every API replica carry a dependency
+# only this process uses - and the two scale on entirely different signals:
+# the API on request rate, this on the depth of the video queue.
+
+FROM eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /build
+
+COPY gradlew ./
+COPY gradle ./gradle
+COPY build.gradle settings.gradle ./
+RUN chmod +x gradlew && ./gradlew dependencies --no-daemon --quiet || true
+
+COPY src ./src
+RUN ./gradlew bootJar --no-daemon -x test
+RUN java -Djarmode=tools -jar build/libs/*.jar extract --launcher --layers --destination extracted
+
+FROM eclipse-temurin:21-jre-alpine AS runtime
+WORKDIR /app
+
+# The one thing this image has that the API image does not.
+RUN apk add --no-cache ffmpeg
+
+RUN addgroup -S elearning && adduser -S -G elearning elearning
+
+# Scratch space for sources and renditions. Owned by the unprivileged user
+# because FFmpeg writes here, and cleared by the pipeline after every job.
+RUN mkdir -p /tmp/transcode && chown elearning:elearning /tmp/transcode
+USER elearning
+
+COPY --from=build --chown=elearning:elearning /build/extracted/dependencies/ ./
+COPY --from=build --chown=elearning:elearning /build/extracted/spring-boot-loader/ ./
+COPY --from=build --chown=elearning:elearning /build/extracted/snapshot-dependencies/ ./
+COPY --from=build --chown=elearning:elearning /build/extracted/application/ ./
+
+# No port: this consumes from a queue and serves nothing.
+
+# A smaller heap share than the API's 75%. FFmpeg is a child process and its
+# memory is not the JVM's - leaving the heap room to grow into the container
+# limit would have the kernel kill the encoder instead.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=50 -XX:+ExitOnOutOfMemoryError"
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV TRANSCODE_ENABLED=true
+ENV JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=/tmp/transcode"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

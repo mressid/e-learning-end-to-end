@@ -137,6 +137,35 @@ services:
       - "127.0.0.1:${MAILPIT_UI_PORT:-8026}:8025"
     networks: [elearning]
 
+
+  # The transcoding worker.
+  #
+  # Not started by default: it needs the application image built, while the rest
+  # of this stack is infrastructure the app runs against from the host. Bring it
+  # up with `docker compose --profile worker up -d` once you want video encoding.
+  #
+  # Scale it independently of the API - `--scale transcode-worker=3` - because
+  # the two answer different pressure: the API to request rate, this to how deep
+  # the video queue is.
+  transcode-worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      TRANSCODE_ENABLED: "true"
+      SPRING_PROFILES_ACTIVE: prod
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:
