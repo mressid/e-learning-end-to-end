@@ -1,17 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PlaceholderPage } from "@/components/dashboard/PlaceholderPage";
+import { NotBuiltPage } from "@/components/dashboard/NotBuiltPage";
 
 const title = "Help & Support";
-const description = "Guides and contact for the Lernova team.";
 
+/*
+ * Kept as a route, removed from the navigation. Nothing in the API can fill it,
+ * so it says so rather than rendering an empty page that looks like a failure.
+ */
 export const Route = createFileRoute("/support")({
   head: () => ({
     meta: [
       { title: `${title} — Lernova` },
-      { name: "description", content: description },
-      { property: "og:title", content: `${title} — Lernova` },
-      { property: "og:description", content: description },
+      { name: "description", content: "Not built yet." },
+      { name: "robots", content: "noindex" },
     ],
   }),
-  component: () => <PlaceholderPage title={title} description={description} pageKey="support" />,
+  component: () => (
+    <NotBuiltPage
+      title={title}
+      reason="There is no ticketing or contact model in the platform."
+      wouldNeed="a support-request model, or simply a link to wherever your team already handles this. A page that pretends to submit a ticket into nothing would be worse."
+    />
+  ),
 });

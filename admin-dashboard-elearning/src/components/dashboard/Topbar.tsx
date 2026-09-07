@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bell, Check, Laptop, Moon, Search, Sun, Languages } from "lucide-react";
+import { Check, Laptop, Moon, Sun, Languages } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTheme } from "@/lib/theme";
 import { useI18n, languages } from "@/lib/i18n";
@@ -45,20 +45,13 @@ export function Topbar() {
     <header className="sticky top-0 z-30 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b bg-card/80 px-3 py-3 backdrop-blur sm:px-6">
       <SidebarTrigger className="shrink-0" />
 
-      <div className="relative min-w-0">
-        <Search
-          className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${
-            dir === "rtl" ? "right-3" : "left-3"
-          }`}
-        />
-        <input
-          type="search"
-          placeholder={t("top.search")}
-          className={`h-10 w-full min-w-0 rounded-xl border bg-secondary/60 text-sm outline-none transition focus:border-ring focus:bg-card lg:max-w-md ${
-            dir === "rtl" ? "pr-9 pl-3" : "pl-9 pr-3"
-          }`}
-        />
-      </div>
+      {/*
+        A global search box used to sit here with no handler on it. There is no
+        cross-entity search endpoint to give it either — learners, courses and
+        media are each searched from their own page — so it was removed rather
+        than left as a field that swallows what you type.
+      */}
+      <div className="min-w-0" />
 
       <div className="flex shrink-0 items-center gap-2">
         {/* Language Switcher */}
@@ -148,15 +141,6 @@ export function Topbar() {
         </DropdownMenu>
 
         {/* Notifications */}
-        <button
-          type="button"
-          aria-label={t("top.notifications")}
-          className="relative grid h-9 w-9 place-items-center rounded-full border bg-card text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive" />
-        </button>
-
         {/* Profile. Was a stock portrait linking to /login — which the route
             guard now bounces straight back, since reaching this bar at all
             means you are already signed in. */}

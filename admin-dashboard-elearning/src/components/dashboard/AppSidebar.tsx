@@ -5,12 +5,9 @@ import {
   BookOpen,
   GraduationCap,
   Users,
-  CalendarDays,
-  MessagesSquare,
   BarChart3,
   Award,
   Settings,
-  LifeBuoy,
   ArrowLeft,
   Layers,
   Star,
@@ -34,8 +31,9 @@ import {
   useCourseReviewSummaryQuery,
   useAdminMeQuery,
   useLogoutMutation,
+  usePermissions,
 } from "@/hooks/queries";
-import type { SectionResponse } from "@/api";
+import { PERMISSIONS, type Permission, type SectionResponse } from "@/api";
 
 /**
  * The signed-in administrator, and the way out.
@@ -44,6 +42,16 @@ import type { SectionResponse } from "@/api";
  * not exist — which meant every session looked like the same person and there
  * was no way to sign out at all.
  */
+interface NavItem {
+  id: string;
+  title: string;
+  url: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Omitted means everyone signed in may see it. */
+  permission?: Permission;
+  badge?: string;
+}
+
 function SidebarAccount() {
   const { data: admin, isLoading } = useAdminMeQuery();
   const logout = useLogoutMutation();
@@ -220,6 +228,7 @@ export function AppSidebar() {
 
   const { t, dir } = useI18n();
   const isRtl = dir === "rtl";
+  const { has, isReady } = usePermissions();
 
   // Detect if currently in a drilled-down course context: /courses/:courseId
   const courseMatch = currentPath.match(/^\/courses\/([a-zA-Z0-9_-]+)/);
@@ -232,30 +241,68 @@ export function AppSidebar() {
   const { data: instructors } = useCourseInstructorsQuery(courseId || "");
   const { data: reviewSummary } = useCourseReviewSummaryQuery(courseId || "");
 
-  const main = [
+  /*
+   * Schedule, Messages and Support are gone from here.
+   *
+   * Not an oversight — there is nothing behind them. Nothing in the API models
+   * a calendar or a cohort timetable; there is no administrator inbox (learner
+   * notifications live under /me/*, which refuses an admin token, and
+   * discussion threads exist only inside a course); and there is no ticketing.
+   * A permanent "8" badge over an inbox that cannot load is worse than no link.
+   * The routes still resolve, so old bookmarks do not 404 — they say what they
+   * are instead.
+   */
+  const main: NavItem[] = [
     { id: "dashboard", title: t("nav.dashboard"), url: "/", icon: LayoutDashboard },
-    { id: "courses", title: t("nav.courses"), url: "/courses", icon: BookOpen },
-    { id: "students", title: t("nav.students"), url: "/students", icon: Users },
-    { id: "instructors", title: t("nav.instructors"), url: "/instructors", icon: GraduationCap },
-    { id: "schedule", title: t("nav.schedule"), url: "/schedule", icon: CalendarDays },
     {
-      id: "messages",
-      title: t("nav.messages"),
-      url: "/messages",
-      icon: MessagesSquare,
-      badge: "8",
+      id: "courses",
+      title: t("nav.courses"),
+      url: "/courses",
+      icon: BookOpen,
+      permission: PERMISSIONS.COURSE_READ,
+    },
+    {
+      id: "students",
+      title: t("nav.students"),
+      url: "/students",
+      icon: Users,
+      permission: PERMISSIONS.USER_READ,
+    },
+    {
+      id: "instructors",
+      title: t("nav.instructors"),
+      url: "/instructors",
+      icon: GraduationCap,
+      permission: PERMISSIONS.USER_READ,
     },
   ];
 
-  const insights = [
-    { id: "analytics", title: t("nav.analytics"), url: "/analytics", icon: BarChart3 },
-    { id: "certificates", title: t("nav.certificates"), url: "/certificates", icon: Award },
+  const insights: NavItem[] = [
+    {
+      id: "analytics",
+      title: t("nav.analytics"),
+      url: "/analytics",
+      icon: BarChart3,
+      permission: PERMISSIONS.COURSE_READ,
+    },
+    {
+      id: "certificates",
+      title: t("nav.certificates"),
+      url: "/certificates",
+      icon: Award,
+      permission: PERMISSIONS.CERTIFICATE_READ,
+    },
   ];
 
-  const bottom = [
+  const bottom: NavItem[] = [
     { id: "settings", title: t("nav.settings"), url: "/settings", icon: Settings },
-    { id: "support", title: t("nav.support"), url: "/support", icon: LifeBuoy },
   ];
+
+  // Hiding a link an administrator cannot follow is courtesy; the server still
+  // refuses the call. Until the token has been read, show everything rather
+  // than flash a shrunken menu that then grows.
+  const permitted = (items: NavItem[]) =>
+    isReady ? items.filter((i) => !i.permission || has(i.permission)) : items;
 
   const isItemActive = (url: string) => {
     if (url === "/") {
@@ -494,7 +541,7 @@ export function AppSidebar() {
               <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 {t("nav.learning")}
               </div>
-              {main.map((item) => {
+              {permitted(main).map((item) => {
                 const active = isItemActive(item.url);
                 const Icon = item.icon;
                 return (
@@ -532,7 +579,7 @@ export function AppSidebar() {
               <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 {t("nav.insights")}
               </div>
-              {insights.map((item) => {
+              {permitted(insights).map((item) => {
                 const active = isItemActive(item.url);
                 const Icon = item.icon;
                 return (
@@ -557,7 +604,7 @@ export function AppSidebar() {
           {/* Bottom Actions & User Profile — pinned */}
           <div className="mt-3 shrink-0 space-y-2 border-t border-sidebar-border/60 pt-3">
             <div className="space-y-1">
-              {bottom.map((item) => {
+              {permitted(bottom).map((item) => {
                 const active = isItemActive(item.url);
                 const Icon = item.icon;
                 return (
