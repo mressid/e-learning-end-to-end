@@ -4,6 +4,7 @@ import {
   adminCatalogApi,
   adminDirectoryApi,
   adminPlatformApi,
+  certificatesApi,
   queryKeys,
   type AdminCourseListParams,
   type AdminSessionListParams,
@@ -252,6 +253,19 @@ export function useSetAdminRoleMutation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.admins.detail(adminId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.admins.all });
     },
+  });
+}
+
+/**
+ * Revoking is deliberately *not* under `/admin`. It lives at
+ * `POST /certificates/{id}/revoke`, guarded by `certificate.revoke`, because a
+ * second path to the same act would be a second place for the rule to drift.
+ */
+export function useRevokeCertificateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (certificateId: string) => certificatesApi.revokeCertificate(certificateId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin.certificates.all }),
   });
 }
 

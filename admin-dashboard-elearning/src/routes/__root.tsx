@@ -20,6 +20,7 @@ import { Topbar } from "@/components/dashboard/Topbar";
 import { ThemeProvider } from "@/lib/theme";
 import { LanguageProvider } from "@/lib/i18n";
 import { AUTH_EXPIRED_EVENT, getAccessToken, isAdminToken } from "@/api";
+import { Toaster } from "@/components/ui/sonner";
 
 const LOGIN_PATH = "/login";
 
@@ -232,6 +233,9 @@ function RootComponent() {
               </div>
             </SidebarProvider>
           )}
+          {/* Mounted once, outside the auth branch: the component existed but
+              was never rendered, so every toast the app raised went nowhere. */}
+          <Toaster />
         </LanguageProvider>
       </ThemeProvider>
     </QueryClientProvider>

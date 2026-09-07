@@ -79,12 +79,24 @@ export function useChangePasswordMutation() {
  * Purely for deciding what to render; the backend still enforces every call.
  */
 export function usePermissions() {
-  const [token, setToken] = useState<string | null>(() => getAccessToken());
+  // Starts null on purpose, on the server *and* on the first client render.
+  // The token lives in localStorage, which the server cannot see: reading it
+  // during render would make the markup disagree with the server's and trip a
+  // hydration mismatch, and callers would flash "you may not do this" before
+  // correcting themselves. `isReady` says which of those two states this is —
+  // "no permissions" or "not known yet" — so callers can wait rather than
+  // guess.
+  const [token, setToken] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const sync = () => setToken(getAccessToken());
+    const sync = () => {
+      setToken(getAccessToken());
+      setIsReady(true);
+    };
+    sync();
     // `storage` covers other tabs; the auth-expired event covers this one.
     window.addEventListener("storage", sync);
     window.addEventListener(AUTH_EXPIRED_EVENT, sync);
@@ -114,5 +126,5 @@ export function usePermissions() {
     [token],
   );
 
-  return { permissions: granted, has, hasAny, isAuthenticated: Boolean(token) };
+  return { permissions: granted, has, hasAny, isReady, isAuthenticated: Boolean(token) };
 }
