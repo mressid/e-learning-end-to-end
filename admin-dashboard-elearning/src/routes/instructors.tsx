@@ -17,14 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FloatingDetailSheet } from "@/components/dashboard/FloatingDetailSheet";
 import { toast } from "sonner";
 
 const title = "Instructors";
@@ -49,6 +42,11 @@ export const Route = createFileRoute("/instructors")({
 const PAGE_SIZE = 20;
 /** The backend's minimum. Stated up front rather than discovered on submit. */
 const MIN_PASSWORD = 12;
+
+// The sheet renders its actions in a footer outside the scrolling body, so the
+// buttons reference their form by id rather than being nested inside it.
+const ADD_FORM_ID = "add-instructor-form";
+const EDIT_FORM_ID = "edit-instructor-form";
 
 function InstructorsPage() {
   const { t } = useI18n();
@@ -260,13 +258,13 @@ function InstructorsPage() {
         </div>
       </section>
 
-      <AddInstructorDialog open={adding} onClose={() => setAdding(false)} />
-      <EditInstructorDialog person={editing} onClose={() => setEditing(null)} />
+      <AddInstructorSheet open={adding} onClose={() => setAdding(false)} />
+      <EditInstructorSheet person={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }
 
-function AddInstructorDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddInstructorSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateUserMutation();
   const [form, setForm] = useState({
     firstName: "",
@@ -309,105 +307,93 @@ function AddInstructorDialog({ open, onClose }: { open: boolean; onClose: () => 
     );
   };
 
+  const close = () => {
+    reset();
+    onClose();
+  };
+
   return (
-    <Dialog
+    <FloatingDetailSheet
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          reset();
-          onClose();
-        }
-      }}
+      onOpenChange={(next) => !next && close()}
+      title="Add an instructor"
+      description="Active straight away — there is no confirmation email, so pass the password on yourself. Nothing forces a change at first sign-in."
+      footerActions={
+        <>
+          <Button type="button" variant="outline" onClick={close}>
+            Cancel
+          </Button>
+          {/* The footer sits outside the <form>, so it submits by id rather
+              than by being nested in it. */}
+          <Button type="submit" form={ADD_FORM_ID} disabled={create.isPending}>
+            {create.isPending ? "Adding…" : "Add instructor"}
+          </Button>
+        </>
+      }
     >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add an instructor</DialogTitle>
-          <DialogDescription>
-            The account is active straight away — there is no confirmation email, so pass the
-            password on yourself. Nothing forces a change at first sign-in.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="i-first">First name</Label>
-              <Input
-                id="i-first"
-                value={form.firstName}
-                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="i-last">Last name</Label>
-              <Input
-                id="i-last"
-                value={form.lastName}
-                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-              />
-            </div>
-          </div>
-
+      <form id={ADD_FORM_ID} onSubmit={submit} className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="i-username">Username</Label>
+            <Label htmlFor="i-first">First name</Label>
             <Input
-              id="i-username"
-              required
-              minLength={3}
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              id="i-first"
+              value={form.firstName}
+              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
             />
           </div>
-
           <div className="space-y-1.5">
-            <Label htmlFor="i-email">Email</Label>
+            <Label htmlFor="i-last">Last name</Label>
             <Input
-              id="i-email"
-              type="email"
-              required
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              id="i-last"
+              value={form.lastName}
+              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
             />
           </div>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="i-password">Starting password</Label>
-            <Input
-              id="i-password"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={MIN_PASSWORD}
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-            />
-            <p className="text-xs text-muted-foreground">At least {MIN_PASSWORD} characters.</p>
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="i-username">Username</Label>
+          <Input
+            id="i-username"
+            required
+            minLength={3}
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+          />
+        </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="space-y-1.5">
+          <Label htmlFor="i-email">Email</Label>
+          <Input
+            id="i-email"
+            type="email"
+            required
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+        </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                reset();
-                onClose();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Adding…" : "Add instructor"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <div className="space-y-1.5">
+          <Label htmlFor="i-password">Starting password</Label>
+          <Input
+            id="i-password"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={MIN_PASSWORD}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">At least {MIN_PASSWORD} characters.</p>
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </form>
+    </FloatingDetailSheet>
   );
 }
 
-function EditInstructorDialog({
+function EditInstructorSheet({
   person,
   onClose,
 }: {
@@ -453,58 +439,57 @@ function EditInstructorDialog({
   };
 
   return (
-    <Dialog open={person !== null} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit {person?.username}</DialogTitle>
-          <DialogDescription>Only the fields you change are sent.</DialogDescription>
-        </DialogHeader>
+    <FloatingDetailSheet
+      open={person !== null}
+      onOpenChange={(next) => !next && onClose()}
+      title={person ? `Edit ${person.username}` : "Edit"}
+      description="Only the fields you change are sent."
+      footerActions={
+        <>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form={EDIT_FORM_ID} disabled={update.isPending}>
+            {update.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </>
+      }
+    >
+      {person && (
+        <form id={EDIT_FORM_ID} onSubmit={submit} className="space-y-4" key={person.id}>
+          <div className="space-y-1.5">
+            <Label htmlFor="e-username">Username</Label>
+            <Input id="e-username" name="username" defaultValue={person.username} minLength={3} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="e-email">Email</Label>
+            <Input id="e-email" name="email" type="email" defaultValue={person.email} />
+          </div>
 
-        {person && (
-          <form onSubmit={submit} className="space-y-3" key={person.id}>
-            <div className="space-y-1.5">
-              <Label htmlFor="e-username">Username</Label>
-              <Input id="e-username" name="username" defaultValue={person.username} minLength={3} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="e-email">Email</Label>
-              <Input id="e-email" name="email" type="email" defaultValue={person.email} />
-            </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
-
-            <div className="rounded-lg border border-dashed p-3">
-              <p className="text-sm font-medium">Remove instructor status</p>
-              {/* Stated because it is the question anyone hesitates over here. */}
-              <p className="mt-1 text-xs text-muted-foreground">
-                Stops them starting new courses. The {person.courseCount ?? 0} they already own stay
-                theirs and stay published — ownership is what confers authority over those, and this
-                does not touch it.
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                disabled={update.isPending}
-                onClick={revoke}
-              >
-                <ShieldOff className="h-3.5 w-3.5" />
-                Remove status
-              </Button>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={update.isPending}>
-                {update.isPending ? "Saving…" : "Save changes"}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
+          <div className="rounded-lg border border-dashed p-3">
+            <p className="text-sm font-medium">Remove instructor status</p>
+            {/* Stated because it is the question anyone hesitates over here. */}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stops them starting new courses. The {person.courseCount ?? 0} they already own stay
+              theirs and stay published — ownership is what confers authority over those, and this
+              does not touch it.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              disabled={update.isPending}
+              onClick={revoke}
+            >
+              <ShieldOff className="h-3.5 w-3.5" />
+              Remove status
+            </Button>
+          </div>
+        </form>
+      )}
+    </FloatingDetailSheet>
   );
 }
