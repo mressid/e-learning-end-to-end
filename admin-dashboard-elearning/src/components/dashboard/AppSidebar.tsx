@@ -16,6 +16,9 @@ import {
   FileCheck,
   ChevronRight,
   LogOut,
+  Shield,
+  KeyRound,
+  Radio,
 } from "lucide-react";
 
 import { Sidebar } from "@/components/ui/sidebar";
@@ -33,6 +36,7 @@ import {
   useLogoutMutation,
   usePermissions,
 } from "@/hooks/queries";
+import type { PeopleTab } from "@/routes/users";
 import { PERMISSIONS, type Permission, type SectionResponse } from "@/api";
 
 /**
@@ -229,6 +233,15 @@ export function AppSidebar() {
   const { t, dir } = useI18n();
   const isRtl = dir === "rtl";
   const { has, isReady } = usePermissions();
+  // Super-admin is not a permission code — it is whether one of your roles is
+  // the super role. React Query dedupes this with SidebarAccount's own call.
+  const me = useAdminMeQuery();
+  const isSuperAdmin = (me.data?.roles ?? []).some((r) => r.isSuper);
+
+  // The people workspace has the same shape as the course drill-down: one
+  // section at a time, chosen from the sidebar, held in the URL.
+  const isPeopleWorkspace = currentPath === "/users" || currentPath.startsWith("/users/");
+  const activePeopleTab = (search["view"] as PeopleTab | undefined) ?? "learners";
 
   // Detect if currently in a drilled-down course context: /courses/:courseId
   const courseMatch = currentPath.match(/^\/courses\/([a-zA-Z0-9_-]+)/);
@@ -261,19 +274,15 @@ export function AppSidebar() {
       icon: BookOpen,
       permission: PERMISSIONS.COURSE_READ,
     },
+    // One entry, not two. Learners, instructors, administrators, roles and
+    // sessions are the same subject, and used to be answered in four unlinked
+    // places. Deliberately not gated on user.read: a super admin with no
+    // permission codes still belongs in here for roles and administrators.
     {
-      id: "students",
-      title: t("nav.students"),
-      url: "/students",
+      id: "people",
+      title: "People",
+      url: "/users",
       icon: Users,
-      permission: PERMISSIONS.USER_READ,
-    },
-    {
-      id: "instructors",
-      title: t("nav.instructors"),
-      url: "/instructors",
-      icon: GraduationCap,
-      permission: PERMISSIONS.USER_READ,
     },
   ];
 
@@ -310,6 +319,31 @@ export function AppSidebar() {
     }
     return currentPath === url || currentPath.startsWith(url + "/");
   };
+
+  const peopleLinks: Array<{
+    id: PeopleTab;
+    title: string;
+    icon: React.ComponentType<{ className?: string }>;
+    /** Omitted means it is super-admin gated, which is not a permission code. */
+    permission?: Permission;
+    superOnly?: boolean;
+  }> = [
+    { id: "learners", title: "Learners", icon: Users, permission: PERMISSIONS.USER_READ },
+    {
+      id: "instructors",
+      title: "Instructors",
+      icon: GraduationCap,
+      permission: PERMISSIONS.USER_READ,
+    },
+    { id: "admins", title: "Administrators", icon: Shield, superOnly: true },
+    { id: "roles", title: "Roles & permissions", icon: KeyRound, superOnly: true },
+    {
+      id: "sessions",
+      title: "Live sessions",
+      icon: Radio,
+      permission: PERMISSIONS.SETTINGS_MANAGE,
+    },
+  ];
 
   const workspaceLinks: Array<{
     id: string;
@@ -365,7 +399,83 @@ export function AppSidebar() {
       )}
       style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
     >
-      {isCourseDrilldown && courseId ? (
+      {isPeopleWorkspace ? (
+        /* ========================================================================= */
+        /* People Workspace Contextual Navigation                                    */
+        /* ========================================================================= */
+        <div className="flex h-full min-h-0 w-full flex-col p-3.5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto sidebar-scroll">
+            <Link
+              to="/"
+              className="group flex cursor-pointer items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:-translate-x-1 rtl:group-hover:translate-x-1" />
+              <div className="min-w-0">
+                <span className="block truncate">Back to dashboard</span>
+                <span className="block text-[10px] font-normal text-muted-foreground">
+                  Leave people management
+                </span>
+              </div>
+            </Link>
+
+            <div className="space-y-2 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/30 p-3">
+              <span className="grid h-6 w-6 place-items-center rounded-lg bg-primary/15 text-primary">
+                <Users className="h-3.5 w-3.5" />
+              </span>
+              <div>
+                <h3 className="text-xs font-bold text-sidebar-foreground">People</h3>
+                <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Accounts &amp; access
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Manage
+              </div>
+              {peopleLinks.map((item) => {
+                // Sections this account cannot open are hidden rather than shown
+                // and refused — but only once the token has been read, so the
+                // menu does not visibly shrink a beat after loading.
+                if (isReady) {
+                  if (item.superOnly && !isSuperAdmin) return null;
+                  if (item.permission && !has(item.permission)) return null;
+                }
+                const isSelected = activePeopleTab === item.id;
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.id}
+                    to="/users"
+                    search={{ view: item.id }}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
+                      isSelected
+                        ? "bg-primary font-semibold text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 truncate text-left rtl:text-right">{item.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-3 shrink-0 space-y-2 border-t border-sidebar-border/60 pt-3">
+            <Link
+              to="/settings"
+              className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+              <span>Platform Settings</span>
+            </Link>
+            <SidebarAccount />
+          </div>
+        </div>
+      ) : isCourseDrilldown && courseId ? (
         /* ========================================================================= */
         /* Drill-Down Course Contextual Navigation                                  */
         /* ========================================================================= */

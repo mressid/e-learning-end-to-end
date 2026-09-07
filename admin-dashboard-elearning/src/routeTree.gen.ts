@@ -20,6 +20,7 @@ import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StudentsRouteImport } from './routes/students'
 import { Route as SupportRouteImport } from './routes/support'
+import { Route as UsersRouteImport } from './routes/users'
 import { Route as CoursesCourseIdRouteImport } from './routes/courses.$courseId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -77,6 +78,11 @@ const SupportRoute = SupportRouteImport.update({
   path: '/support',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CoursesCourseIdRoute = CoursesCourseIdRouteImport.update({
   id: '/$courseId',
   path: '/$courseId',
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/students': typeof StudentsRoute
   '/support': typeof SupportRoute
+  '/users': typeof UsersRoute
   '/courses/$courseId': typeof CoursesCourseIdRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/students': typeof StudentsRoute
   '/support': typeof SupportRoute
+  '/users': typeof UsersRoute
   '/courses/$courseId': typeof CoursesCourseIdRoute
 }
 export interface FileRoutesById {
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/students': typeof StudentsRoute
   '/support': typeof SupportRoute
+  '/users': typeof UsersRoute
   '/courses/$courseId': typeof CoursesCourseIdRoute
 }
 export interface FileRouteTypes {
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/students'
     | '/support'
+    | '/users'
     | '/courses/$courseId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/students'
     | '/support'
+    | '/users'
     | '/courses/$courseId'
   id:
     | '__root__'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/students'
     | '/support'
+    | '/users'
     | '/courses/$courseId'
   fileRoutesById: FileRoutesById
 }
@@ -183,6 +195,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   StudentsRoute: typeof StudentsRoute
   SupportRoute: typeof SupportRoute
+  UsersRoute: typeof UsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -264,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/courses/$courseId': {
       id: '/courses/$courseId'
       path: '/$courseId'
@@ -297,6 +317,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   StudentsRoute: StudentsRoute,
   SupportRoute: SupportRoute,
+  UsersRoute: UsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

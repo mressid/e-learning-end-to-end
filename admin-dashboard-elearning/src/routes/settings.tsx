@@ -2,13 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Check, Laptop, Moon, Sun, Globe, Sparkles } from "lucide-react";
 import { useI18n, languages, type Lang } from "@/lib/i18n";
 import { useTheme, type Theme } from "@/lib/theme";
-import { usePermissions, useAdminMeQuery } from "@/hooks/queries";
+import { usePermissions } from "@/hooks/queries";
 import { PERMISSIONS } from "@/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SecurityPanel } from "@/components/settings/SecurityPanel";
-import { SessionsPanel } from "@/components/settings/SessionsPanel";
 import { AuditPanel } from "@/components/settings/AuditPanel";
-import { AccessPanel } from "@/components/settings/AccessPanel";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -29,13 +27,8 @@ function SettingsPage() {
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
   const { has } = usePermissions();
-  const me = useAdminMeQuery();
 
-  const canManageSettings = has(PERMISSIONS.SETTINGS_MANAGE);
   const canReadAudit = has(PERMISSIONS.AUDIT_READ);
-  // Roles and administrators are super-admin only, and that is not a
-  // permission code — it is whether one of your roles is the super role.
-  const isSuperAdmin = (me.data?.roles ?? []).some((r) => r.isSuper);
 
   const themeOptions: { value: Theme; labelKey: string; icon: typeof Sun; desc: string }[] = [
     { value: "light", labelKey: "theme.light", icon: Sun, desc: "Bright and clear contrast" },
@@ -61,8 +54,6 @@ function SettingsPage() {
         <TabsList>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
-          {canManageSettings && <TabsTrigger value="sessions">Sessions</TabsTrigger>}
-          {isSuperAdmin && <TabsTrigger value="access">Administrators</TabsTrigger>}
           {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
         </TabsList>
 
@@ -167,18 +158,6 @@ function SettingsPage() {
         <TabsContent value="security">
           <SecurityPanel />
         </TabsContent>
-
-        {canManageSettings && (
-          <TabsContent value="sessions">
-            <SessionsPanel />
-          </TabsContent>
-        )}
-
-        {isSuperAdmin && (
-          <TabsContent value="access">
-            <AccessPanel />
-          </TabsContent>
-        )}
 
         {canReadAudit && (
           <TabsContent value="audit">
