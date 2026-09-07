@@ -48,6 +48,24 @@ The login response also carries a `refreshToken`. It works **once** — `POST
 /api/v1/auth/refresh` returns its replacement, and presenting a spent one
 revokes the whole session.
 
+### What is here
+
+| Module | Surface |
+| --- | --- |
+| `identity` | register, sign in, verify, reset, profile, rotating sessions |
+| `courses` | authoring, publication, taxonomy, structure, prerequisites |
+| `learning` | enrolment, progress, lessons, certificates, resources, access windows |
+| `assessment` | quizzes with auto and manual grading, assignments |
+| `community` | discussions and reviews, gated by participation |
+| `platform/media` | presigned uploads, asset library, reference-guarded deletes |
+| `platform/transcode` | HLS ladder in a worker, signed playback (§10) |
+| `platform/notifications` | domain events, RabbitMQ delivery, Mailgun |
+| `platform/audit` | append-only trail of privileged action |
+| `admin` | administrators, roles, 16 permissions, sessions (§8) |
+
+Nine migrations, 285 integration tests against real PostgreSQL, MinIO and
+RabbitMQ. Two container images: the API, and a worker that carries ffmpeg.
+
 ### Sending real email
 
 Mailpit is the default and needs no credentials — it catches everything at
@@ -111,6 +129,13 @@ All bound to `127.0.0.1` only. Override any of them in `.env`.
 - [ ] Prometheus + Grafana (deliberately deferred — add when there is something to measure)
 - [x] Dockerfile — multi-stage, layered jar, non-root, container-aware heap.
       **Image layout verified statically, never run** (see Verification gaps)
+- [x] `Dockerfile.worker` — the same jar, a runtime image that also carries the
+      ffmpeg binary, and a lower heap share because FFmpeg is a child process
+      whose memory is not the JVM's. Separate from the API image because that is
+      ~100MB the API never invokes, and the two scale on different signals
+- [x] `transcode-worker` in compose, behind a `worker` profile, so the default
+      stack stays infrastructure-only and needs no application image built.
+      `docker compose --profile worker up -d --scale transcode-worker=3`
 
 ## 2. Configuration
 
@@ -729,9 +754,12 @@ is carried into the exception rather than dropped for the status code.
   authorized list, with a 403 that says so.
 
 **Verification gaps** (things believed correct but not observed working):
-- The **Docker image has never been built or run**. The layered layout, launcher
-  class and classpath index were checked statically against the real jar; the
-  build itself is unverified.
+- **Neither Docker image has ever been built or run.** For the API image the
+  layered layout, launcher class and classpath index were checked statically
+  against the real jar, so only the build is unverified. `Dockerfile.worker` has
+  had no such check: whether `apk add ffmpeg` resolves, whether the binary is on
+  PATH for the JVM's ProcessBuilder, and whether `/tmp/transcode` is writable by
+  the unprivileged user are all assumptions.
 - `application-prod.yaml` has never been loaded — no prod-profile startup. This
   matters more now: Mailgun's fail-at-startup check only fires under a real boot,
   and prod is the profile that has no `.env` to fall back on.
@@ -742,7 +770,12 @@ is carried into the exception rather than dropped for the status code.
 **Remaining work**, honestly:
 - Admin: nothing. All 16 permissions are enforced; the unbuilt parts of the
   `/settings` page are recorded in §8 as decisions, not gaps
-- Ops: build and run the Docker image; boot once under the `prod` profile
+- Media: **resumable multipart upload**. Presigned PUT is single-shot, so a 4GB
+  lecture that drops at 90% starts over. Raised while designing transcoding as
+  the real answer to large sources — client-side compression is not (§10)
+- Ops: build and run **both** images, and boot once under the `prod` profile.
+  This now spans nine migrations, two images, a JSON seeder and a worker whose
+  entire point is a binary the API image does not have
 
 Everything else on this list is either finished or a deliberate non-goal
 recorded above. The four business modules and the three platform modules all
