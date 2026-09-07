@@ -34,6 +34,45 @@ interface ObjectStorage {
      */
     fun publicUrl(bucket: String, key: String): URI
 
+    // ---- resumable uploads ----------------------------------------------
+    //
+    // Large files arrive in parts. Storage holds the parts between requests,
+    // which is the whole reason a resumable upload can resume: the client asks
+    // what already landed and sends only the difference. A single PUT has
+    // nowhere to keep a half-transferred file.
+
+    /** Opens a multipart upload and returns its id. */
+    fun createMultipartUpload(bucket: String, key: String, contentType: String): String
+
+    /**
+     * A URL the client may PUT one part to.
+     *
+     * Per part rather than per file, so the 15-minute window that is far too
+     * short for four gigabytes is comfortable for ten megabytes.
+     */
+    fun presignedUploadPart(
+        bucket: String,
+        key: String,
+        uploadId: String,
+        partNumber: Int,
+        ttl: Duration,
+    ): URI
+
+    /** Parts already stored, which is how a client learns where to resume. */
+    fun listParts(bucket: String, key: String, uploadId: String): List<UploadedPart>
+
+    /** Assembles the parts into the final object. */
+    fun completeMultipartUpload(bucket: String, key: String, uploadId: String, parts: List<UploadedPart>)
+
+    /**
+     * Discards an unfinished upload.
+     *
+     * Parts that are never completed or aborted stay in the bucket, do not
+     * appear in an ordinary listing, and are billed - so abandoning one costs
+     * money silently until something cleans it up.
+     */
+    fun abortMultipartUpload(bucket: String, key: String, uploadId: String)
+
     /**
      * Reads an object into memory.
      *
@@ -59,3 +98,12 @@ interface ObjectStorage {
  * recompute independently.
  */
 data class StoredObject(val sizeBytes: Long, val checksum: String?)
+
+/**
+ * One part of a multipart upload.
+ *
+ * The ETag comes from storage when the part is stored and has to be handed back
+ * verbatim on completion: it is how S3 verifies the client is assembling the
+ * parts it actually received, rather than a list it invented.
+ */
+data class UploadedPart(val partNumber: Int, val etag: String, val sizeBytes: Long = 0)

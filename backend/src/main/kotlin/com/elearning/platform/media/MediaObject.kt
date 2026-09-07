@@ -55,6 +55,17 @@ class MediaObject(
     @Column
     var checksum: String? = null
 
+    /**
+     * The S3 multipart upload in flight, or null for a single-shot upload.
+     *
+     * Stored because a browser that closed cannot reconstruct it, and without
+     * it a half-finished upload is unresumable however many parts storage is
+     * still holding. Cleared on completion so a finished object carries no
+     * pointer to an upload that no longer exists.
+     */
+    @Column(name = "upload_id", length = 255)
+    var uploadId: String? = null
+
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now()
 

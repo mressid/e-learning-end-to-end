@@ -8,6 +8,9 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.CompletedPart
+import software.amazon.awssdk.services.s3.model.NoSuchUploadException
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
@@ -54,6 +57,65 @@ class S3ObjectStorage(
 
     override fun publicUrl(bucket: String, key: String): URI =
         s3.utilities().getUrl { it.bucket(bucket).key(key) }.toURI()
+
+    // ---- resumable uploads ----------------------------------------------
+
+    override fun createMultipartUpload(bucket: String, key: String, contentType: String): String =
+        s3.createMultipartUpload {
+            it.bucket(bucket).key(key).contentType(contentType)
+        }.uploadId()
+
+    override fun presignedUploadPart(
+        bucket: String,
+        key: String,
+        uploadId: String,
+        partNumber: Int,
+        ttl: Duration,
+    ): URI = presigner.presignUploadPart(
+        UploadPartPresignRequest.builder()
+            .signatureDuration(ttl)
+            .uploadPartRequest { req ->
+                req.bucket(bucket).key(key).uploadId(uploadId).partNumber(partNumber)
+            }
+            .build(),
+    ).url().toURI()
+
+    override fun listParts(bucket: String, key: String, uploadId: String): List<UploadedPart> = try {
+        s3.listParts { it.bucket(bucket).key(key).uploadId(uploadId) }
+            .parts()
+            .map { UploadedPart(it.partNumber(), it.eTag(), it.size() ?: 0) }
+            .sortedBy(UploadedPart::partNumber)
+    } catch (ex: NoSuchUploadException) {
+        // Already completed or aborted. An empty list is the honest answer -
+        // there is nothing left to resume - and is what the caller can act on.
+        emptyList()
+    }
+
+    override fun completeMultipartUpload(
+        bucket: String,
+        key: String,
+        uploadId: String,
+        parts: List<UploadedPart>,
+    ) {
+        s3.completeMultipartUpload { req ->
+            req.bucket(bucket).key(key).uploadId(uploadId).multipartUpload { upload ->
+                upload.parts(
+                    // S3 requires ascending part numbers; a client that sent
+                    // its parts out of order would otherwise be rejected for
+                    // something it has no reason to know about.
+                    parts.sortedBy(UploadedPart::partNumber).map { part ->
+                        CompletedPart.builder().partNumber(part.partNumber).eTag(part.etag).build()
+                    },
+                )
+            }
+        }
+    }
+
+    override fun abortMultipartUpload(bucket: String, key: String, uploadId: String) {
+        // Idempotent: aborting something already gone is the outcome the caller
+        // wanted, and a sweep should not fail on work another sweep finished.
+        runCatching { s3.abortMultipartUpload { it.bucket(bucket).key(key).uploadId(uploadId) } }
+    }
 
     override fun get(bucket: String, key: String): ByteArray =
         s3.getObjectAsBytes { it.bucket(bucket).key(key) }.asByteArray()

@@ -57,6 +57,7 @@ class PendingUploadSweeper(
 
         var recovered = 0
         var failed = 0
+        var aborted = 0
         stale.forEach { record ->
             val stored = runCatching { storage.statOf(record.bucket, record.objectKey) }
                 .onFailure { log.warn("Could not inspect {}/{}", record.bucket, record.objectKey, it) }
@@ -66,16 +67,33 @@ class PendingUploadSweeper(
                 record.markAvailable(stored.sizeBytes, stored.checksum)
                 recovered++
             } else {
+                // A resumable upload that never finished leaves its parts in
+                // the bucket. They do not appear in an ordinary listing and are
+                // billed, so marking the row FAILED without aborting the upload
+                // would lose track of storage that keeps costing money - the
+                // same silent growth as an untracked object, which is what this
+                // sweep exists to prevent.
+                record.uploadId?.let { uploadId ->
+                    runCatching { storage.abortMultipartUpload(record.bucket, record.objectKey, uploadId) }
+                        .onFailure { log.warn("Could not abort multipart upload {}", uploadId, it) }
+                    record.uploadId = null
+                    aborted++
+                }
                 record.markFailed()
                 failed++
             }
         }
-        return SweepResult(recovered = recovered, failed = failed)
+        return SweepResult(recovered = recovered, failed = failed, abortedUploads = aborted)
     }
 }
 
 private const val LOCK_NAME = "pending-upload-sweep"
 
-data class SweepResult(val recovered: Int, val failed: Int) {
+data class SweepResult(
+    val recovered: Int,
+    val failed: Int,
+    /** Multipart uploads discarded, which is storage that stops being billed. */
+    val abortedUploads: Int = 0,
+) {
     val total: Int get() = recovered + failed
 }
