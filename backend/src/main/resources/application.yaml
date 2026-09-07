@@ -143,6 +143,20 @@ elearning:
     # and never deletes, so it is safe to leave on.
     enabled: ${SEED_ENABLED:true}
     location: ${SEED_LOCATION:classpath:seed/reference-data.json}
+  transcode:
+    # Off in the API and on in the worker: the API image carries no ffmpeg
+    # binary, so publishing the pipeline bean there would fail at the first job
+    # rather than at startup.
+    enabled: ${TRANSCODE_ENABLED:false}
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    ffprobe-path: ${FFPROBE_PATH:ffprobe}
+    timeout: ${TRANSCODE_TIMEOUT:30m}
+    preset: ${TRANSCODE_PRESET:veryfast}
+  playback:
+    # Segment URLs must outlast the lecture: the usual 15-minute presign is
+    # right for a download that starts at once, and wrong for a player fetching
+    # segments across two hours.
+    url-ttl: ${PLAYBACK_URL_TTL:4h}
   maintenance:
     # Housekeeping sweeps. Disable in environments where a second instance
     # would duplicate the work (see the note on multi-instance below).

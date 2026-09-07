@@ -5,6 +5,7 @@ import com.elearning.learning.application.SaveLessonCommand
 import com.elearning.platform.media.StorageProperties
 import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.errors.ApiError
+import com.elearning.platform.transcode.application.PlaybackService
 import com.elearning.shared.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -28,6 +29,7 @@ import java.util.UUID
 @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
 class LessonController(
     private val lessonService: LessonService,
+    private val playbackService: PlaybackService,
     private val currentUser: CurrentUser,
     private val storageProperties: StorageProperties,
 ) {
@@ -87,4 +89,21 @@ class LessonController(
             contentUrl = lessonService.contentUrl(itemId, currentUser.requireId()).toString(),
             expiresInSeconds = storageProperties.presignedUrlTtl.seconds,
         )
+
+    @GetMapping("/stream.m3u8", produces = ["application/vnd.apple.mpegurl"])
+    @Operation(
+        summary = "HLS manifest for the lesson's video",
+        description = "Same access rule as the lesson itself: an active enrolment, or " +
+            "course editorship. Segment URLs are signed for the caller, so a copied " +
+            "manifest stops working rather than becoming a public mirror of the course. " +
+            "Answers 422 while the video is still being processed - the original file " +
+            "remains downloadable from /content-url in the meantime.",
+    )
+    fun stream(@PathVariable itemId: UUID): String {
+        // Reuses the lesson's own read check rather than repeating it: whoever
+        // may read the lesson may watch its video, and one rule in one place
+        // cannot drift from the other.
+        lessonService.get(itemId, currentUser.requireId())
+        return playbackService.manifestFor(itemId)
+    }
 }

@@ -11,6 +11,7 @@ import com.elearning.learning.infrastructure.DocumentContentRepository
 import com.elearning.learning.infrastructure.LessonRepository
 import com.elearning.learning.infrastructure.VideoContentRepository
 import com.elearning.platform.media.MediaService
+import com.elearning.platform.transcode.application.TranscodeService
 import com.elearning.shared.errors.BusinessRuleException
 import com.elearning.shared.errors.ForbiddenException
 import com.elearning.shared.errors.NotFoundException
@@ -35,6 +36,7 @@ class LessonService(
     private val catalog: CourseCatalog,
     private val enrollmentService: EnrollmentService,
     private val mediaService: MediaService,
+    private val transcoding: TranscodeService,
 ) {
 
     @Transactional
@@ -122,10 +124,21 @@ class LessonService(
                 ),
             )
         } else {
+            // Re-pointing at a different file invalidates the renditions built
+            // from the old one, so they are cleared rather than left to serve
+            // the previous video under the new lesson.
+            if (existing.mediaId != mediaId) existing.hlsManifestMediaId = null
             existing.mediaId = mediaId
             existing.thumbnailMediaId = command.thumbnailMediaId
             existing.durationSeconds = command.durationSeconds
         }
+
+        // Queued here rather than when the upload completes, because media has
+        // no idea whether a file is a lesson video, a submission attachment or
+        // a resource - transcoding every uploaded MP4 would burn CPU on files
+        // nobody streams. Published after this transaction commits, so the
+        // worker cannot win the race to a row that is not there yet.
+        transcoding.enqueueAndPublish(mediaId, itemId)
     }
 
     private fun saveArticle(itemId: UUID, command: SaveLessonCommand) {
