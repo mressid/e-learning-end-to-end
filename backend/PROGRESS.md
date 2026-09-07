@@ -567,7 +567,7 @@ enough to need them (AGENT.md §5).
         confirmed; only genuinely absent objects are marked FAILED
   - [x] Checksum (the storage ETag) read back alongside the size on complete
         and on sweep recovery — from storage, never from the client
-  - [ ] FFmpeg transcoding pipeline via RabbitMQ
+  - [x] **FFmpeg transcoding** — see §10
 - [x] `platform/notifications` — notification service, channels, RabbitMQ worker
 - [x] `platform/maintenance` — scheduled sweeps guarded by a PostgreSQL
       transaction-scoped advisory lock, so a second instance skips rather than
@@ -742,7 +742,6 @@ is carried into the exception rather than dropped for the status code.
 **Remaining work**, honestly:
 - Admin: nothing. All 16 permissions are enforced; the unbuilt parts of the
   `/settings` page are recorded in §8 as decisions, not gaps
-- Media: FFmpeg transcoding via RabbitMQ
 - Ops: build and run the Docker image; boot once under the `prod` profile
 
 Everything else on this list is either finished or a deliberate non-goal
@@ -770,7 +769,7 @@ ship working endpoints with integration tests against real infrastructure.
       to one test class, but Spring caches one context across all of them — the
       second class then reuses a context pointing at a stopped container. Started
       once per JVM, removed by Ryuk at exit.
-- [x] **277 tests, all green** (verified run, not a stale report)
+- [x] **285 tests, all green** (verified run, not a stale report)
 - [x] **Notification delivery race, found and fixed.** `NotificationEventListener`
       was annotated `@Transactional(REQUIRES_NEW)`, so the row was created *and*
       the RabbitMQ message published inside one transaction. The worker is fast,
@@ -1094,6 +1093,85 @@ content.
 **Not moved:** the super-admin *account* in V6 keeps its Flyway placeholders.
 Its password hash is a credential, and a credential belongs in the environment
 rather than in a file committed next to the code that reads it.
+
+---
+
+## 10. Video transcoding
+
+`video_contents` has carried `hls_manifest_media_id`, `thumbnail_media_id` and
+`duration_seconds` since V1 with nothing writing them. This fills them.
+
+### The parts
+
+- [x] `VideoPipeline` port — a port for the same reason `ObjectStorage` and
+      `EmailSender` are: transcoding is the one job here genuinely cheaper to
+      buy than to run, and behind this interface a managed encoder is a class
+      and a property rather than a rewrite
+- [x] `V9__transcode_jobs.sql` — a job has attempts, an error and a life longer
+      than the request that made it; `media_objects.status` describes an upload
+- [x] `TranscodeMessaging` — exchange, queue and DLQ, the same shape as
+      notifications. No requeue-on-reject matters more here: a video that kills
+      FFmpeg would otherwise be redelivered forever and block every lesson
+      behind it
+- [x] `FfmpegVideoPipeline` — the only class that knows FFmpeg exists
+- [x] `Dockerfile.worker` — JRE plus the ffmpeg binary. Separate because that is
+      ~100MB the API never invokes, and the two scale on different signals:
+      the API on request rate, this on queue depth. Its heap is capped lower,
+      since FFmpeg is a child process whose memory is not the JVM's
+
+### Decisions
+
+- [x] **Queued on lesson attachment, not on upload.** Media has no idea whether
+      a file is a lesson video, a submission attachment or a resource, so
+      transcoding every uploaded MP4 would burn CPU on files nobody streams
+- [x] **The row is written before the message**, and published after commit. The
+      notification pipeline learned this the hard way — the worker is fast,
+      won the race against its own transaction, found no row and discarded the
+      message
+- [x] **Failure degrades, it does not break.** If the encode never succeeds
+      `hls_manifest_media_id` stays null and the player falls back to the
+      original upload. Same rule certificate rendering follows
+- [x] The ladder **is** the compression. Re-encoding to those bitrates is the
+      compression; there is no separate step to add. Renditions above the
+      source's own height are skipped rather than upscaled
+- [x] **No client-side compression.** It saves upload bandwidth only — the
+      server must transcode anyway for adaptive streaming — while costing a
+      second lossy generation and a browser encoder that is often slower than
+      the upload it replaces. Resumable multipart upload is the real answer to
+      large sources, and is still open
+
+### Playback
+
+- [x] **Signed, over the private bucket.** The public bucket was the cheap
+      option and is what thumbnails use; it is the wrong answer here, because
+      enrolment gates every other thing a student can reach and making the most
+      valuable asset readable by anyone holding a URL would turn that check into
+      a formality
+- [x] `GET /items/{id}/lesson/stream.m3u8` rewrites the manifest per request,
+      presigning each segment for the caller. Bytes still never pass through the
+      application — segments come from storage directly, only the playlist does
+- [x] Segment URLs last 4 hours, not the usual 15 minutes: a player fetches
+      segments across the whole runtime, and a two-hour lecture would stop dead
+      partway through on URLs that had expired behind it
+- [x] Re-pointing a lesson at a different file clears the old manifest, so
+      renditions built from the previous video cannot serve under the new one
+
+### Found by the tests
+
+- [x] `TranscodeWorker.publish` was `@Transactional(REQUIRES_NEW)` and called
+      from the same class, so **self-invocation bypassed the proxy**: it ran
+      with no transaction, the lesson update was dirty-checked into nothing, and
+      the job reported success while playback answered STREAM_NOT_READY. Split
+      into `TranscodeResultWriter`, the third time this codebase has hit that
+      proxy rule
+- [x] The listener is separate from the worker so tests drive the logic
+      directly; a live `@RabbitListener` would consume jobs underneath the
+      assertions — the trap the maintenance sweeps already avoid
+- [x] `DisabledVideoPipeline` keeps the API context loading without an encoder.
+      It first used `@ConditionalOnMissingBean`, which is only dependable on
+      auto-configuration classes and left 270 tests failing to start; it is now
+      the inverse property condition, mutually exclusive with the real one
+- [x] 8 integration tests, FFmpeg faked behind the port
 
 ---
 
