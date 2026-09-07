@@ -6604,12 +6604,12 @@
       "AuthorQuestionOption": {
         "type": "object",
         "properties": {
-          "correct": {
-            "type": "boolean"
-          },
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "isCorrect": {
+            "type": "boolean"
           },
           "position": {
             "type": "integer",
@@ -6851,12 +6851,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "isRequired": {
+            "type": "boolean"
+          },
           "position": {
             "type": "integer",
             "format": "int32"
-          },
-          "required": {
-            "type": "boolean"
           },
           "title": {
             "type": "string"
@@ -6878,9 +6878,6 @@
       "CourseProgressResponse": {
         "type": "object",
         "properties": {
-          "complete": {
-            "type": "boolean"
-          },
           "completedItems": {
             "type": "integer",
             "format": "int32"
@@ -6888,6 +6885,9 @@
           "courseId": {
             "type": "string",
             "format": "uuid"
+          },
+          "isComplete": {
+            "type": "boolean"
           },
           "items": {
             "type": "array",
@@ -7032,7 +7032,7 @@
       "CreateCourseItemRequest": {
         "type": "object",
         "properties": {
-          "required": {
+          "isRequired": {
             "type": "boolean"
           },
           "title": {
@@ -8252,7 +8252,7 @@
       "QuestionOptionRequest": {
         "type": "object",
         "properties": {
-          "correct": {
+          "isCorrect": {
             "type": "boolean"
           },
           "text": {
@@ -8634,6 +8634,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "isSuper": {
+            "type": "boolean",
+            "description": "True means every permission, including ones added later"
+          },
+          "isSystem": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -8645,13 +8652,6 @@
           },
           "slug": {
             "type": "string"
-          },
-          "super": {
-            "type": "boolean",
-            "description": "True means every permission, including ones added later"
-          },
-          "system": {
-            "type": "boolean"
           }
         }
       },
@@ -8662,14 +8662,14 @@
             "type": "string",
             "format": "uuid"
           },
+          "isSuper": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
           "slug": {
             "type": "string"
-          },
-          "super": {
-            "type": "boolean"
           }
         }
       },

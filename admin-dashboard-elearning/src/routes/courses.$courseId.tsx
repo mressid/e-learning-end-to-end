@@ -138,7 +138,7 @@ function SectionItemsList({
               <Badge variant="outline" className="text-[10px] uppercase font-medium">
                 {item.type}
               </Badge>
-              {item.required && (
+              {item.isRequired && (
                 <Badge variant="secondary" className="text-[10px]">
                   Required
                 </Badge>

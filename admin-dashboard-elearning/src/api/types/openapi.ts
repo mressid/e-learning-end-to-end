@@ -2463,9 +2463,9 @@ export interface components {
             targetType?: string | null;
         };
         AuthorQuestionOption: {
-            correct?: boolean;
             /** Format: uuid */
             id?: string;
+            isCorrect?: boolean;
             /** Format: int32 */
             position?: number;
             text?: string;
@@ -2556,9 +2556,9 @@ export interface components {
         CourseItemResponse: {
             /** Format: uuid */
             id?: string;
+            isRequired?: boolean;
             /** Format: int32 */
             position?: number;
-            required?: boolean;
             title?: string;
             type?: string;
         };
@@ -2567,11 +2567,11 @@ export interface components {
             text?: string;
         };
         CourseProgressResponse: {
-            complete?: boolean;
             /** Format: int32 */
             completedItems?: number;
             /** Format: uuid */
             courseId?: string;
+            isComplete?: boolean;
             items?: components["schemas"]["ProgressResponse"][];
             percentComplete?: number;
             /** Format: int32 */
@@ -2619,7 +2619,7 @@ export interface components {
             parentId?: string | null;
         };
         CreateCourseItemRequest: {
-            required?: boolean;
+            isRequired?: boolean;
             title: string;
             /** @enum {string} */
             type?: "LESSON" | "QUIZ" | "ASSIGNMENT";
@@ -3082,7 +3082,7 @@ export interface components {
             status?: string;
         };
         QuestionOptionRequest: {
-            correct?: boolean;
+            isCorrect?: boolean;
             text: string;
         };
         QuizResponse: {
@@ -3210,19 +3210,19 @@ export interface components {
             description?: string | null;
             /** Format: uuid */
             id?: string;
+            /** @description True means every permission, including ones added later */
+            isSuper?: boolean;
+            isSystem?: boolean;
             name?: string;
             permissions?: string[];
             slug?: string;
-            /** @description True means every permission, including ones added later */
-            super?: boolean;
-            system?: boolean;
         };
         RoleSummary: {
             /** Format: uuid */
             id?: string;
+            isSuper?: boolean;
             name?: string;
             slug?: string;
-            super?: boolean;
         };
         SaveAssignmentRequest: {
             allowLateSubmission?: boolean | null;

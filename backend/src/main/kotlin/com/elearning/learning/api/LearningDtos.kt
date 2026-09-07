@@ -1,5 +1,6 @@
 package com.elearning.learning.api
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.elearning.learning.application.CourseProgressSummary
 import com.elearning.learning.domain.Enrollment
 import com.elearning.learning.domain.LearningProgress
@@ -75,7 +76,7 @@ data class CourseProgressResponse(
     val requiredItems: Int,
     val completedItems: Int,
     val percentComplete: BigDecimal,
-    val isComplete: Boolean,
+    @get:JsonProperty("isComplete") val isComplete: Boolean,
     val items: List<ProgressResponse>,
 ) {
     companion object {

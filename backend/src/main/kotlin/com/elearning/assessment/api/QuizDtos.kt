@@ -1,5 +1,6 @@
 package com.elearning.assessment.api
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.elearning.assessment.application.AttemptResult
 import com.elearning.assessment.application.AttemptView
 import com.elearning.assessment.application.QuestionWithOptions
@@ -62,7 +63,7 @@ data class AddQuestionRequest(
 @Schema(name = "QuestionOptionRequest")
 data class OptionRequest(
     @field:NotBlank val text: String,
-    val isCorrect: Boolean = false,
+    @get:JsonProperty("isCorrect") val isCorrect: Boolean = false,
 )
 
 /** Author-facing: includes the answer key. Never returned to a student. */
@@ -76,7 +77,12 @@ data class AuthorQuestionResponse(
     val options: List<AuthorOption>,
 ) {
     @Schema(name = "AuthorQuestionOption")
-    data class AuthorOption(val id: UUID, val text: String, val isCorrect: Boolean, val position: Int)
+    data class AuthorOption(
+        val id: UUID,
+        val text: String,
+        @get:JsonProperty("isCorrect") val isCorrect: Boolean,
+        val position: Int,
+    )
 
     companion object {
         fun of(q: QuestionWithOptions) = AuthorQuestionResponse(

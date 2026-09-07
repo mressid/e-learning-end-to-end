@@ -1,5 +1,6 @@
 package com.elearning.courses.api
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.elearning.courses.application.TermView
 import com.elearning.courses.domain.Course
 import com.elearning.courses.domain.CourseItem
@@ -133,7 +134,7 @@ data class SectionResponse(
 data class CreateCourseItemRequest(
     @field:NotBlank @field:Size(max = 255) val title: String,
     val type: CourseItemType,
-    val isRequired: Boolean = true,
+    @get:JsonProperty("isRequired") val isRequired: Boolean = true,
 )
 
 @Schema(name = "CourseItemResponse")
@@ -142,7 +143,7 @@ data class CourseItemResponse(
     val title: String,
     val type: String,
     val position: Int,
-    val isRequired: Boolean,
+    @get:JsonProperty("isRequired") val isRequired: Boolean,
 ) {
     companion object {
         fun of(item: CourseItem) = CourseItemResponse(

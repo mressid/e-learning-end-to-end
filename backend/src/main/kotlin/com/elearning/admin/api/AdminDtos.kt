@@ -1,5 +1,6 @@
 package com.elearning.admin.api
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.elearning.admin.application.AdminSession
 import com.elearning.admin.domain.AdminUser
 import com.elearning.admin.domain.Permission
@@ -88,7 +89,12 @@ data class AdminResponse(
 }
 
 @Schema(name = "RoleSummary")
-data class RoleSummary(val id: UUID, val name: String, val slug: String, val isSuper: Boolean) {
+data class RoleSummary(
+    val id: UUID,
+    val name: String,
+    val slug: String,
+    @get:JsonProperty("isSuper") val isSuper: Boolean,
+) {
     companion object {
         fun of(r: Role) = RoleSummary(requireNotNull(r.id), r.name, r.slug, r.isSuper)
     }
@@ -101,7 +107,9 @@ data class RoleResponse(
     val slug: String,
     val description: String?,
     @get:Schema(description = "True means every permission, including ones added later")
+    @get:JsonProperty("isSuper")
     val isSuper: Boolean,
+    @get:JsonProperty("isSystem")
     val isSystem: Boolean,
     val permissions: List<String>,
 ) {
