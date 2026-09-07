@@ -58,7 +58,24 @@ backends is a separate project.
 
 ---
 
-## Phase A — the API layer *(unblocks everything below)*
+## Phase A — the API layer — **done**
+
+All 31 endpoints are reachable, typed and verified against the running backend:
+13 read surfaces return 200, and every non-empty payload matches its declared
+schema with no undeclared fields. Certificates, submissions, media and audit are
+empty on this database, so those shapes are typed but not yet exercised.
+
+Fixing this turned up a backend defect worth recording. `@Schema(name =
+"PageResponse")` on a generic class pinned one name to every instantiation, so
+springdoc erased the element type — the document claimed every paged endpoint
+returned the same content, and any DTO appearing *only* as page content was
+never emitted at all. `AdminCourseResponse`, `InstructorRosterEntry`,
+`SessionResponse` and `AuditEntryResponse` were all invisible for that reason.
+Removing the annotation took the document from 107 schemas to 127. It is a
+documentation-only change: the JSON Jackson emits is unaffected, so a server
+running the old bytecode serves responses identical to the new spec.
+
+### Phase A as built
 
 Nothing else can start until the client speaks to the 31 admin endpoints it
 currently ignores. One module per area, matching the existing
@@ -78,18 +95,38 @@ currently ignores. One module per area, matching the existing
 | `admin-sessions.api.ts` | sessions ×5 | `settings.manage` |
 | `admin-taxonomy.api.ts` | categories ×3 | `category.manage` |
 
-Deliverable: every endpoint reachable and typed. No UI yet.
+Built as four modules grouped by consuming page rather than eleven one-endpoint
+files: `admin-directory`, `admin-catalog`, `admin-access`, `admin-platform`,
+with hooks in `src/hooks/queries/useAdmin.ts`.
 
 ## Phase B — the pages that have a backend waiting
 
 In dependency order, each shippable on its own:
 
-1. **`/students`** — list, search, detail, suspend/reinstate. The largest single
-   gap: `user.read` and `user.suspend` are enforced and entirely unused.
-2. **`/instructors`** — list, busiest first. Small; mostly a table.
-3. **`/certificates`** — issued certificates, with revoke.
+1. ~~**`/students`**~~ — **done.** Search, status filter, suspend/reinstate, and
+   sign-out-everywhere. Suspension and session revocation are separate actions
+   because they are separate things: a suspended account's existing access token
+   keeps working until it expires.
+2. ~~**`/instructors`**~~ — **done.** Read-only by necessity, not by omission —
+   the roster is derived from course ownership, so there is no membership to
+   edit and the page says so.
+3. ~~**`/certificates`**~~ — **done.** Validity filter and revoke, behind a
+   confirmation stating that verification starts reporting it revoked, the
+   record is kept, and there is no undo.
 4. **`/analytics`** — rebuild on `GET /admin/courses/stats` plus real counts.
-   Whatever it cannot source, it should not display.
+   Whatever it cannot source, it should not display. **Next.**
+
+Two defects surfaced while building these:
+
+- **The toaster was never mounted.** `ui/sonner.tsx` existed and nothing
+  rendered it, so every toast the app raised went nowhere.
+- **`usePermissions` read localStorage during render**, which the server cannot
+  see — so every gated page server-rendered a refusal and corrected itself on
+  hydration, flashing "you may not do this" at administrators who hold the
+  permission. It now reports `isReady`, and `PermissionGate` waits.
+
+Shared pieces now available: `PageHeader`, `PermissionGate`, `Pager`,
+`StatusBadge`, `lib/format.ts`.
 
 ## Phase C — `/` (the dashboard home)
 
