@@ -86,8 +86,23 @@ cd ../instructor-workspace-elearning
 npm install && npm run dev            # :8083
 ```
 
-Flyway builds the schema on first start, seeding reference data and a super
-admin whose password the application will warn you to change.
+Flyway builds the schema on first start, and the application seeds its
+reference data and a super admin whose password it will warn you to change.
+
+Under the `dev` profile it also creates accounts to work with, because nothing
+else can: registration only makes a student and wants a confirmed email, and an
+instructor can only be made by an administrator. They all share the password
+`Lernova-dev-2026`, which the log prints on the run that creates them.
+
+| | |
+| --- | --- |
+| `instructor@elearning.local`, `instructor2@…` | author courses; sign in to the workspace |
+| `student@elearning.local`, `student2@…` | enrol and make progress |
+| `student.pending@elearning.local` | never confirmed its address, so sign-in is refused |
+| `staff@elearning.local` | an administrator who is *not* a super admin |
+| `admin@elearning.local` | the seeded super admin |
+
+Set `elearning.seed.dev-accounts=false` to leave them out.
 
 ```bash
 cd backend && ./gradlew test          # needs Docker; uses Testcontainers

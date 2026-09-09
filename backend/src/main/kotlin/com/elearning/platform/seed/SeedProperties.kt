@@ -13,4 +13,12 @@ data class SeedProperties(
 
     /** Spring resource location, so a deployment can point at a file on disk. */
     val location: String = "classpath:seed/reference-data.json",
+
+    /**
+     * Accounts to develop against, one of each kind. Honoured only under the
+     * `dev` profile, which is what actually keeps them out of anywhere real -
+     * this switch is for turning them off in a dev database you would rather
+     * keep clean.
+     */
+    val devAccounts: Boolean = true,
 )

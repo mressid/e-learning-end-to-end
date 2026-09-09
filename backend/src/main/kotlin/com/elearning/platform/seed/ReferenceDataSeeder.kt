@@ -12,6 +12,7 @@ import com.elearning.courses.infrastructure.CategoryRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
+import org.springframework.core.annotation.Order
 import org.springframework.core.io.ResourceLoader
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -55,7 +56,11 @@ class ReferenceDataSeeder(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    // Before DevAccountSeeder, which builds a role out of the permission
+    // catalogue written here. Two listeners on one event have no order unless
+    // one is given, and without it the role would come out holding nothing.
     @EventListener(ApplicationReadyEvent::class)
+    @Order(10)
     @Transactional
     fun seed() {
         if (!properties.enabled) {
