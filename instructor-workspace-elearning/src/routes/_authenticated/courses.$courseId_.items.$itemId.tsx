@@ -90,8 +90,13 @@ const WORDS_PER_MINUTE = 200;
  *
  * The item lives under its course in the path rather than at `/items/{id}`, so
  * the sidebar stays in course context and "back" has somewhere to go.
+ *
+ * The underscore in the filename is what keeps it a page. Without it the
+ * router makes this a child of `courses.$courseId`, which renders no
+ * `<Outlet />` — so opening a lesson drew the course page instead, landing on
+ * the overview. The URL is unchanged; only the nesting is.
  */
-export const Route = createFileRoute("/_authenticated/courses/$courseId/items/$itemId")({
+export const Route = createFileRoute("/_authenticated/courses/$courseId_/items/$itemId")({
   head: () => ({ meta: [{ title: "Lesson — Lernova for Instructors" }] }),
   component: LessonPage,
 });
