@@ -108,18 +108,30 @@ class LessonService(
     }
 
     private fun saveVideo(itemId: UUID, courseId: UUID, command: SaveLessonCommand, editorId: UUID) {
+        val existing = videos.findById(itemId).orElse(null)
+
+        // Leaving the file out of an update keeps the one already attached.
+        // Media ids are deliberately never given back to the client, so an
+        // author changing a video lesson's description has nothing to re-send -
+        // demanding it here made every edit after the first one impossible.
+        // Still required when there is no lesson yet, which is what a client
+        // creating one has to satisfy.
         val mediaId = command.mediaId
+            ?: existing?.mediaId
             ?: throw BusinessRuleException("MEDIA_REQUIRED", "A video lesson needs a mediaId")
+        val thumbnailMediaId = command.thumbnailMediaId ?: existing?.thumbnailMediaId
+
         requireAttachable(mediaId, courseId, editorId)
         command.thumbnailMediaId?.let { requireAttachable(it, courseId, editorId) }
 
-        val existing = videos.findById(itemId).orElse(null)
+        val isNewFile = existing == null || existing.mediaId != mediaId
+
         if (existing == null) {
             videos.save(
                 VideoContent(
                     lessonId = itemId,
                     mediaId = mediaId,
-                    thumbnailMediaId = command.thumbnailMediaId,
+                    thumbnailMediaId = thumbnailMediaId,
                     durationSeconds = command.durationSeconds,
                 ),
             )
@@ -127,9 +139,9 @@ class LessonService(
             // Re-pointing at a different file invalidates the renditions built
             // from the old one, so they are cleared rather than left to serve
             // the previous video under the new lesson.
-            if (existing.mediaId != mediaId) existing.hlsManifestMediaId = null
+            if (isNewFile) existing.hlsManifestMediaId = null
             existing.mediaId = mediaId
-            existing.thumbnailMediaId = command.thumbnailMediaId
+            existing.thumbnailMediaId = thumbnailMediaId
             existing.durationSeconds = command.durationSeconds
         }
 
@@ -138,7 +150,11 @@ class LessonService(
         // a resource - transcoding every uploaded MP4 would burn CPU on files
         // nobody streams. Published after this transaction commits, so the
         // worker cannot win the race to a row that is not there yet.
-        transcoding.enqueueAndPublish(mediaId, itemId)
+        //
+        // Only for a file this lesson has not encoded already: re-queueing the
+        // same video every time somebody fixes a sentence in the description
+        // would spend a CPU-hour on a change that cannot affect the output.
+        if (isNewFile) transcoding.enqueueAndPublish(mediaId, itemId)
     }
 
     private fun saveArticle(itemId: UUID, command: SaveLessonCommand) {
@@ -153,11 +169,15 @@ class LessonService(
     }
 
     private fun saveDocument(itemId: UUID, courseId: UUID, command: SaveLessonCommand, editorId: UUID) {
+        val existing = documents.findById(itemId).orElse(null)
+
+        // As with a video: omitting the file on an update keeps the one that is
+        // there, because the client was never told which one it is.
         val mediaId = command.mediaId
+            ?: existing?.mediaId
             ?: throw BusinessRuleException("MEDIA_REQUIRED", "A document lesson needs a mediaId")
         requireAttachable(mediaId, courseId, editorId)
 
-        val existing = documents.findById(itemId).orElse(null)
         if (existing == null) {
             documents.save(DocumentContent(lessonId = itemId, mediaId = mediaId))
         } else {

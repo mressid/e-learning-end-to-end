@@ -175,6 +175,30 @@ class LessonApiTest(
     }
 
     @Test
+    fun `editing a file lesson keeps the file it already has`() {
+        val course = publishedCourseWithItem()
+        val mediaId = uploadFile(course.teacher, "slides")
+        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$mediaId"}""")
+            .andExpect { status { isOk() } }
+
+        // The media id is never handed back, so an author changing only the
+        // description has nothing to re-send. That must not cost them the file.
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"contentType":"DOCUMENT","description":"Read this first"}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.hasFile") { value(true) }
+            jsonPath("$.description") { value("Read this first") }
+        }
+
+        mockMvc.get("/api/v1/items/${course.itemId}/lesson/content-url") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect { status { isOk() } }
+    }
+
+    @Test
     fun `content types with no storage table are rejected rather than half-saved`() {
         val course = publishedCourseWithItem()
         saveLesson(course.teacher, course.itemId, """{"contentType":"AUDIO"}""").andExpect {
