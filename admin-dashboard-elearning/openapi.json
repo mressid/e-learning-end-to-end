@@ -10,7 +10,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8081",
+      "url": "http://localhost:8085",
       "description": "Generated server url"
     }
   ],
@@ -225,7 +225,7 @@
     },
     "/api/v1/admin/admins/{adminId}": {
       "get": {
-        "operationId": "get_7",
+        "operationId": "get_8",
         "parameters": [
           {
             "in": "path",
@@ -842,7 +842,7 @@
     "/api/v1/admin/certificates/{certificateId}": {
       "get": {
         "description": "Requires `certificate.read`.",
-        "operationId": "get_6",
+        "operationId": "get_7",
         "parameters": [
           {
             "in": "path",
@@ -1727,7 +1727,7 @@
     "/api/v1/admin/users/{userId}": {
       "get": {
         "description": "Requires `user.read`.",
-        "operationId": "get_4",
+        "operationId": "get_5",
         "parameters": [
           {
             "in": "path",
@@ -1763,7 +1763,7 @@
       },
       "patch": {
         "description": "Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.",
-        "operationId": "update_3",
+        "operationId": "update_4",
         "parameters": [
           {
             "in": "path",
@@ -2568,6 +2568,59 @@
         ]
       }
     },
+    "/api/v1/courses/mine": {
+      "get": {
+        "description": "Everything you own or co-instruct, at any status. Unlike the public listing this includes drafts, which is the point: an unfinished course is the one its author still has work to do on. Authority here is the relationship, not a permission - you are shown the courses your own id answers for.",
+        "operationId": "mine_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "description": "Max 100",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseCourseResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the courses you teach",
+        "tags": [
+          "Courses"
+        ]
+      }
+    },
     "/api/v1/courses/{courseId}/enroll": {
       "post": {
         "operationId": "enroll",
@@ -3290,7 +3343,7 @@
     "/api/v1/courses/{id}": {
       "get": {
         "description": "Published courses are public. Drafts are visible only to the owner and its instructors.",
-        "operationId": "get_3",
+        "operationId": "get_4",
         "parameters": [
           {
             "in": "path",
@@ -3330,7 +3383,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_2",
+        "operationId": "update_3",
         "parameters": [
           {
             "in": "path",
@@ -3876,6 +3929,83 @@
         "tags": [
           "Course items"
         ]
+      },
+      "get": {
+        "description": "Visible to anyone who can see the course. An item is addressable on its own - its lesson, quiz and assignment all hang off this id - so a page opened at one of those URLs can load the item it names.",
+        "operationId": "get_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseItemResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "One course item",
+        "tags": [
+          "Course items"
+        ]
+      },
+      "patch": {
+        "description": "Only the fields you send change. The type is fixed at creation: a lesson and a quiz store different things, and switching would orphan them.",
+        "operationId": "update_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourseItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseItemResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rename an item, or change whether it is required",
+        "tags": [
+          "Course items"
+        ]
       }
     },
     "/api/v1/items/{itemId}/assignment": {
@@ -4207,7 +4337,7 @@
                 }
               }
             },
-            "description": "Content missing for the chosen type, or the upload is not complete"
+            "description": "Content missing for the chosen source, or the upload is not complete"
           }
         },
         "security": [
@@ -5502,7 +5632,7 @@
     "/api/v1/resources/{resourceId}": {
       "get": {
         "description": "Its creator, or a participant of a course it is attached to.",
-        "operationId": "get_5",
+        "operationId": "get_6",
         "parameters": [
           {
             "in": "path",
@@ -5695,6 +5825,52 @@
           }
         ],
         "summary": "Delete a section and its items",
+        "tags": [
+          "Course sections"
+        ]
+      },
+      "patch": {
+        "description": "Only the fields you send change. Use the reorder endpoint to move it: position is a property of the whole sequence, not of one section.",
+        "operationId": "updateSection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sectionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rename a section, or rewrite its description",
         "tags": [
           "Course sections"
         ]
@@ -7701,10 +7877,13 @@
               "string",
               "null"
             ],
-            "description": "Body of an ARTICLE lesson"
+            "description": "Body of an INLINE lesson"
           },
-          "contentType": {
-            "type": "string"
+          "contentFormat": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "courseItemId": {
             "type": "string",
@@ -7726,6 +7905,22 @@
           "hasFile": {
             "type": "boolean",
             "description": "Whether a file is attached; fetch it from /content-url"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target of a URL lesson"
           }
         }
       },
@@ -8960,7 +9155,7 @@
       },
       "SaveLessonRequest": {
         "type": "object",
-        "description": "\n        Content fields depend on contentType: ARTICLE needs `content`,\n        VIDEO and DOCUMENT need `mediaId` of a completed upload.\n    ",
+        "description": "\n        What the lesson teaches with is described by two independent fields.\n        `resourceType` is what the material is; `sourceType` is where it lives,\n        and decides which content field is required: FILE needs `mediaId` -\n        except when replacing nothing, where the file already attached is kept -\n        URL needs `url`, INLINE needs `content`.\n    ",
         "properties": {
           "completionRule": {
             "type": [
@@ -8970,7 +9165,6 @@
             "enum": [
               "MANUAL",
               "VIEW",
-              "PERCENTAGE",
               "DURATION"
             ]
           },
@@ -8979,16 +9173,18 @@
               "string",
               "null"
             ],
-            "description": "Markdown or HTML body, for ARTICLE lessons"
+            "description": "The body, for an INLINE lesson"
           },
-          "contentType": {
-            "type": "string",
+          "contentFormat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How to read `content`; defaults to MARKDOWN",
             "enum": [
-              "VIDEO",
-              "ARTICLE",
-              "DOCUMENT",
-              "AUDIO",
-              "EXTERNAL"
+              "MARKDOWN",
+              "HTML",
+              "PLAIN_TEXT"
             ]
           },
           "description": {
@@ -9005,6 +9201,7 @@
               "null"
             ],
             "format": "int32",
+            "description": "How long the author says it takes, not how long the file runs",
             "minimum": 0
           },
           "mediaId": {
@@ -9013,16 +9210,45 @@
               "null"
             ],
             "format": "uuid",
-            "description": "A completed media upload, for VIDEO and DOCUMENT lessons"
+            "description": "A completed media upload, for a FILE lesson"
           },
-          "thumbnailMediaId": {
+          "resourceType": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "SOURCE_CODE",
+              "VIDEO",
+              "AUDIO",
+              "IMAGE",
+              "LINK",
+              "OTHER"
+            ]
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "FILE",
+              "URL",
+              "INLINE"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Names the material in the library; usually the item's own title",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "url": {
             "type": [
               "string",
               "null"
             ],
-            "format": "uuid"
+            "description": "Where it lives, for a URL lesson. http and https only"
           }
-        }
+        },
+        "required": [
+          "title"
+        ]
       },
       "SaveQuizRequest": {
         "type": "object",
@@ -9518,6 +9744,26 @@
           }
         }
       },
+      "UpdateCourseItemRequest": {
+        "type": "object",
+        "description": "Every field optional; only what is sent changes. The item's type is not among them - a lesson and a quiz carry different rows behind them, so switching would orphan content the new type has nowhere to put.",
+        "properties": {
+          "isRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "minLength": 0
+          }
+        }
+      },
       "UpdateCourseRequest": {
         "type": "object",
         "description": "Only the fields present are changed",
@@ -9624,6 +9870,26 @@
               "null"
             ],
             "maxLength": 64,
+            "minLength": 0
+          }
+        }
+      },
+      "UpdateSectionRequest": {
+        "type": "object",
+        "description": "Every field optional; only what is sent changes. Position is not editable here - moving a section is the reorder endpoint, which sees the whole sequence.",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
             "minLength": 0
           }
         }

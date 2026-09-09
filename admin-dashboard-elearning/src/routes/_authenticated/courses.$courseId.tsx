@@ -166,20 +166,18 @@ function LessonContentInspector({
   const { data: lesson, isLoading } = useLessonQuery(itemId);
   const saveLessonMutation = useSaveLessonMutation(itemId);
 
-  const [contentType, setContentType] = useState<"ARTICLE" | "VIDEO" | "DOCUMENT">("ARTICLE");
   const [contentBody, setContentBody] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Only a lesson written in place can be edited from here. One backed by an
+  // uploaded file or a link is a resource with a file behind it, and replacing
+  // that is authoring work: it belongs in the instructor workspace, which has
+  // the upload flow and the editor to do it with.
+  const isWritten = lesson?.sourceType === "INLINE";
+
   useEffect(() => {
     if (lesson && lesson.courseItemId === itemId) {
-      setContentType(
-        lesson.contentType === "VIDEO"
-          ? "VIDEO"
-          : lesson.contentType === "DOCUMENT"
-            ? "DOCUMENT"
-            : "ARTICLE",
-      );
       setContentBody(lesson.content || "");
     }
   }, [lesson, itemId]);
@@ -190,9 +188,16 @@ function LessonContentInspector({
 
     try {
       await saveLessonMutation.mutateAsync({
-        contentType,
+        title: itemTitle,
+        resourceType: "DOCUMENT",
+        sourceType: "INLINE",
         content: contentBody,
-        completionRule: "MANUAL",
+        // Kept as it was written rather than assumed: the format travels with
+        // the text now.
+        contentFormat:
+          (lesson?.contentFormat as "MARKDOWN" | "HTML" | "PLAIN_TEXT" | undefined) ?? "MARKDOWN",
+        completionRule:
+          (lesson?.completionRule as "MANUAL" | "VIEW" | "DURATION" | undefined) ?? "MANUAL",
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
@@ -207,7 +212,7 @@ function LessonContentInspector({
       open={open}
       onOpenChange={onOpenChange}
       title={itemTitle}
-      description="Edit lesson content, media reference, and completion rules."
+      description="Edit the text of a written lesson. Files and links are authored in the instructor workspace."
       size="lg"
       footerActions={
         <div className="flex items-center gap-2">
@@ -223,7 +228,7 @@ function LessonContentInspector({
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={saveLessonMutation.isPending}
+            disabled={saveLessonMutation.isPending || (Boolean(lesson) && !isWritten)}
             className="gap-1.5"
           >
             <Save className="h-3.5 w-3.5" />
@@ -245,35 +250,31 @@ function LessonContentInspector({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">Content Type</label>
-            <Select
-              value={contentType}
-              onValueChange={(v: "ARTICLE" | "VIDEO" | "DOCUMENT") => setContentType(v)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ARTICLE">Article (Markdown / HTML)</SelectItem>
-                <SelectItem value="VIDEO">Video Upload</SelectItem>
-                <SelectItem value="DOCUMENT">Document / PDF</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">
-              Lesson Body (Markdown / Text)
-            </label>
-            <textarea
-              rows={12}
-              value={contentBody}
-              onChange={(e) => setContentBody(e.target.value)}
-              placeholder="Write the article or lesson notes here..."
-              className="w-full font-mono rounded-md border border-input bg-card p-3 text-xs text-foreground outline-none transition focus:border-ring focus:ring-1 focus:ring-ring"
-            />
-          </div>
+          {lesson && !isWritten ? (
+            <div className="rounded-lg border border-dashed p-6 text-center">
+              <p className="text-sm font-semibold text-foreground">
+                This lesson is {lesson.sourceType === "URL" ? "a link" : "an uploaded file"}.
+              </p>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {lesson.url ??
+                  "Replacing it means uploading another file, which the instructor workspace does."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">
+                Lesson body ({(lesson?.contentFormat ?? "MARKDOWN").toLowerCase().replace("_", " ")}
+                )
+              </label>
+              <textarea
+                rows={12}
+                value={contentBody}
+                onChange={(e) => setContentBody(e.target.value)}
+                placeholder="Write the article or lesson notes here..."
+                className="w-full font-mono rounded-md border border-input bg-card p-3 text-xs text-foreground outline-none transition focus:border-ring focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          )}
         </div>
       )}
     </FloatingDetailSheet>
@@ -491,59 +492,59 @@ function CourseWorkspacePage() {
       </div>
 
       {/* Course Context Header Card */}
-      {
-         (activeTab === "overview")  &&
-             <Card className="border-border/60 shadow-xs">
-        <CardContent className="p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2.5">
-                <Badge
-                  variant={
-                    course.status === "PUBLISHED"
-                      ? "default"
-                      : course.status === "DRAFT"
-                        ? "secondary"
-                        : "outline"
-                  }
-                  className="text-xs uppercase tracking-wide"
-                >
-                  {course.status}
-                </Badge>
-                {course.level && (
-                  <Badge variant="outline" className="text-xs">
-                    {course.level}
+      {activeTab === "overview" && (
+        <Card className="border-border/60 shadow-xs">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5">
+                  <Badge
+                    variant={
+                      course.status === "PUBLISHED"
+                        ? "default"
+                        : course.status === "DRAFT"
+                          ? "secondary"
+                          : "outline"
+                    }
+                    className="text-xs uppercase tracking-wide"
+                  >
+                    {course.status}
                   </Badge>
-                )}
-                <span className="text-xs text-muted-foreground uppercase font-mono">
-                  {course.language || "en"}
-                </span>
+                  {course.level && (
+                    <Badge variant="outline" className="text-xs">
+                      {course.level}
+                    </Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground uppercase font-mono">
+                    {course.language || "en"}
+                  </span>
+                </div>
+
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                  {course.title}
+                </h1>
+                <p className="text-sm text-muted-foreground max-w-3xl">
+                  {course.shortDescription || course.description || "No description provided."}
+                </p>
               </div>
 
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">{course.title}</h1>
-              <p className="text-sm text-muted-foreground max-w-3xl">
-                {course.shortDescription || course.description || "No description provided."}
-              </p>
-            </div>
-
-            <div className="flex sm:flex-col items-end gap-2 shrink-0 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                Created {course.createdAt ? new Date(course.createdAt).toLocaleDateString() : "-"}
-              </span>
-              {course.publishedAt && (
-                <span className="flex items-center gap-1 text-primary">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Published {new Date(course.publishedAt).toLocaleDateString()}
+              <div className="flex sm:flex-col items-end gap-2 shrink-0 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Created {course.createdAt ? new Date(course.createdAt).toLocaleDateString() : "-"}
                 </span>
-              )}
+                {course.publishedAt && (
+                  <span className="flex items-center gap-1 text-primary">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Published {new Date(course.publishedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      }
-  
       {/* Active Workspace View Header (Driven by Sidebar Navigation) */}
       <div className="flex items-center justify-between border-b pb-3">
         <div>

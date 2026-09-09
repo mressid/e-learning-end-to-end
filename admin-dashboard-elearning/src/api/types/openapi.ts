@@ -33,7 +33,7 @@ export interface paths {
             cookie?: never;
         };
         /** One administrator, with their roles */
-        get: operations["get_7"];
+        get: operations["get_8"];
         put?: never;
         post?: never;
         delete?: never;
@@ -292,7 +292,7 @@ export interface paths {
          * One certificate
          * @description Requires `certificate.read`.
          */
-        get: operations["get_6"];
+        get: operations["get_7"];
         put?: never;
         post?: never;
         delete?: never;
@@ -634,7 +634,7 @@ export interface paths {
          * One learner
          * @description Requires `user.read`.
          */
-        get: operations["get_4"];
+        get: operations["get_5"];
         put?: never;
         post?: never;
         delete?: never;
@@ -644,7 +644,7 @@ export interface paths {
          * Edit an account
          * @description Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.
          */
-        patch: operations["update_3"];
+        patch: operations["update_4"];
         trace?: never;
     };
     "/api/v1/admin/users/{userId}/password": {
@@ -1024,6 +1024,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/courses/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the courses you teach
+         * @description Everything you own or co-instruct, at any status. Unlike the public listing this includes drafts, which is the point: an unfinished course is the one its author still has work to do on. Authority here is the relationship, not a permission - you are shown the courses your own id answers for.
+         */
+        get: operations["mine_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{courseId}/enroll": {
         parameters: {
             query?: never;
@@ -1246,14 +1266,14 @@ export interface paths {
          * Get a course
          * @description Published courses are public. Drafts are visible only to the owner and its instructors.
          */
-        get: operations["get_3"];
+        get: operations["get_4"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Update a course */
-        patch: operations["update_2"];
+        patch: operations["update_3"];
         trace?: never;
     };
     "/api/v1/courses/{id}/archive": {
@@ -1438,7 +1458,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * One course item
+         * @description Visible to anyone who can see the course. An item is addressable on its own - its lesson, quiz and assignment all hang off this id - so a page opened at one of those URLs can load the item it names.
+         */
+        get: operations["get_3"];
         put?: never;
         post?: never;
         /**
@@ -1448,7 +1472,11 @@ export interface paths {
         delete: operations["delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename an item, or change whether it is required
+         * @description Only the fields you send change. The type is fixed at creation: a lesson and a quiz store different things, and switching would orphan them.
+         */
+        patch: operations["update_2"];
         trace?: never;
     };
     "/api/v1/items/{itemId}/assignment": {
@@ -2040,7 +2068,7 @@ export interface paths {
          * Read a resource
          * @description Its creator, or a participant of a course it is attached to.
          */
-        get: operations["get_5"];
+        get: operations["get_6"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2120,7 +2148,11 @@ export interface paths {
         delete: operations["deleteSection"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename a section, or rewrite its description
+         * @description Only the fields you send change. Use the reorder endpoint to move it: position is a property of the whole sequence, not of one section.
+         */
+        patch: operations["updateSection"];
         trace?: never;
     };
     "/api/v1/sections/{sectionId}/items": {
@@ -2808,9 +2840,9 @@ export interface components {
         };
         LessonResponse: {
             completionRule?: string;
-            /** @description Body of an ARTICLE lesson */
+            /** @description Body of an INLINE lesson */
             content?: string | null;
-            contentType?: string;
+            contentFormat?: string | null;
             /** Format: uuid */
             courseItemId?: string;
             description?: string | null;
@@ -2818,6 +2850,11 @@ export interface components {
             durationSeconds?: number | null;
             /** @description Whether a file is attached; fetch it from /content-url */
             hasFile?: boolean;
+            resourceType?: string;
+            sourceType?: string;
+            title?: string;
+            /** @description Target of a URL lesson */
+            url?: string | null;
         };
         LoginRequest: {
             /** Format: email */
@@ -3303,26 +3340,41 @@ export interface components {
             maxScore?: number;
         };
         /**
-         * @description Content fields depend on contentType: ARTICLE needs `content`,
-         *             VIDEO and DOCUMENT need `mediaId` of a completed upload.
+         * @description What the lesson teaches with is described by two independent fields.
+         *             `resourceType` is what the material is; `sourceType` is where it lives,
+         *             and decides which content field is required: FILE needs `mediaId` -
+         *             except when replacing nothing, where the file already attached is kept -
+         *             URL needs `url`, INLINE needs `content`.
          */
         SaveLessonRequest: {
             /** @enum {string|null} */
-            completionRule?: "MANUAL" | "VIEW" | "PERCENTAGE" | "DURATION" | null;
-            /** @description Markdown or HTML body, for ARTICLE lessons */
+            completionRule?: "MANUAL" | "VIEW" | "DURATION" | null;
+            /** @description The body, for an INLINE lesson */
             content?: string | null;
-            /** @enum {string} */
-            contentType?: "VIDEO" | "ARTICLE" | "DOCUMENT" | "AUDIO" | "EXTERNAL";
+            /**
+             * @description How to read `content`; defaults to MARKDOWN
+             * @enum {string|null}
+             */
+            contentFormat?: "MARKDOWN" | "HTML" | "PLAIN_TEXT" | null;
             description?: string | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description How long the author says it takes, not how long the file runs
+             */
             durationSeconds?: number | null;
             /**
              * Format: uuid
-             * @description A completed media upload, for VIDEO and DOCUMENT lessons
+             * @description A completed media upload, for a FILE lesson
              */
             mediaId?: string | null;
-            /** Format: uuid */
-            thumbnailMediaId?: string | null;
+            /** @enum {string} */
+            resourceType?: "DOCUMENT" | "SOURCE_CODE" | "VIDEO" | "AUDIO" | "IMAGE" | "LINK" | "OTHER";
+            /** @enum {string} */
+            sourceType?: "FILE" | "URL" | "INLINE";
+            /** @description Names the material in the library; usually the item's own title */
+            title: string;
+            /** @description Where it lives, for a URL lesson. http and https only */
+            url?: string | null;
         };
         SaveQuizRequest: {
             instructions?: string | null;
@@ -3502,6 +3554,11 @@ export interface components {
             /** Format: int64 */
             unread?: number;
         };
+        /** @description Every field optional; only what is sent changes. The item's type is not among them - a lesson and a quiz carry different rows behind them, so switching would orphan content the new type has nowhere to put. */
+        UpdateCourseItemRequest: {
+            isRequired?: boolean | null;
+            title?: string | null;
+        };
         /** @description Only the fields present are changed */
         UpdateCourseRequest: {
             /**
@@ -3529,6 +3586,11 @@ export interface components {
             language?: string | null;
             lastName?: string | null;
             timezone?: string | null;
+        };
+        /** @description Every field optional; only what is sent changes. Position is not editable here - moving a section is the reorder endpoint, which sees the whole sequence. */
+        UpdateSectionRequest: {
+            description?: string | null;
+            title?: string | null;
         };
         /** @description Every field optional; only what is sent changes. The kind of account is not editable - create the other kind instead. */
         UpdateUserRequest: {
@@ -3635,7 +3697,7 @@ export interface operations {
             };
         };
     };
-    get_7: {
+    get_8: {
         parameters: {
             query?: never;
             header?: never;
@@ -3983,7 +4045,7 @@ export interface operations {
             };
         };
     };
-    get_6: {
+    get_7: {
         parameters: {
             query?: never;
             header?: never;
@@ -4440,7 +4502,7 @@ export interface operations {
             };
         };
     };
-    get_4: {
+    get_5: {
         parameters: {
             query?: never;
             header?: never;
@@ -4462,7 +4524,7 @@ export interface operations {
             };
         };
     };
-    update_3: {
+    update_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -4998,6 +5060,30 @@ export interface operations {
             };
         };
     };
+    mine_1: {
+        parameters: {
+            query?: {
+                page?: number;
+                /** @description Max 100 */
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponseCourseResponse"];
+                };
+            };
+        };
+    };
     enroll: {
         parameters: {
             query?: never;
@@ -5405,7 +5491,7 @@ export interface operations {
             };
         };
     };
-    get_3: {
+    get_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -5436,7 +5522,7 @@ export interface operations {
             };
         };
     };
-    update_2: {
+    update_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -5729,6 +5815,28 @@ export interface operations {
             };
         };
     };
+    get_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseItemResponse"];
+                };
+            };
+        };
+    };
     delete: {
         parameters: {
             query?: never;
@@ -5754,6 +5862,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCourseItemRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseItemResponse"];
                 };
             };
         };
@@ -5943,7 +6077,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Content missing for the chosen type, or the upload is not complete */
+            /** @description Content missing for the chosen source, or the upload is not complete */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6713,7 +6847,7 @@ export interface operations {
             };
         };
     };
-    get_5: {
+    get_6: {
         parameters: {
             query?: never;
             header?: never;
@@ -6826,6 +6960,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    updateSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectionResponse"];
+                };
             };
         };
     };
