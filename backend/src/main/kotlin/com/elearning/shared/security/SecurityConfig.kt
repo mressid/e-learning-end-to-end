@@ -32,7 +32,10 @@ class SecurityConfig(
         val configuration = CorsConfiguration()
 
         configuration.allowedOrigins = listOf(
-            "http://localhost:8080" // hard-coded for now
+            "http://localhost:8080", // hard-coded for now
+            "http://localhost:8081", // hard-coded for now
+            "http://localhost:8082", // hard-coded for now
+            "http://localhost:8083" // hard-coded for now
         )
         configuration.allowedMethods = listOf(
             "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
