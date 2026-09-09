@@ -78,6 +78,13 @@ interface RolePermissionRepository : JpaRepository<RolePermission, RolePermissio
 
     @Query("select p.id.permissionCode from RolePermission p where p.id.roleId = :roleId")
     fun permissionCodesOf(@Param("roleId") roleId: UUID): List<String>
+
+    @Query("""
+    select p.id.permissionCode
+    from RolePermission p
+    where p.id.roleId in :roleIds
+    """)
+    fun permissionRolesOf(@Param("roleIds") roleIds: List<UUID>): List<String>
 }
 
 interface AdminUserRoleRepository : JpaRepository<AdminUserRole, AdminUserRoleId> {

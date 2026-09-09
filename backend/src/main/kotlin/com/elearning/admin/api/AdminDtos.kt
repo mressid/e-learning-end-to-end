@@ -50,11 +50,27 @@ data class CreateAdminRequest(
     @field:NotBlank @field:Size(min = 3, max = 64) val username: String,
     @get:Schema(description = "Handed to the new administrator, who changes it themselves")
     @field:NotBlank @field:Size(min = 12, max = 128) val password: String,
+    @get:Schema(
+        description = "Roles to give them straight away. Omit or leave empty and the " +
+            "account is created holding no permissions at all, which is a working " +
+            "sign-in that can do nothing.",
+    )
+    val roleIds: List<UUID> = emptyList(),
 )
 
 @Schema(name = "ChangePasswordRequest")
 data class ChangePasswordRequest(
     @field:NotBlank val currentPassword: String,
+    @field:NotBlank @field:Size(min = 12, max = 128) val newPassword: String,
+)
+
+@Schema(
+    name = "SetPasswordRequest",
+    description = "A replacement password, chosen by the administrator doing the reset and " +
+        "handed over out of band. Nothing forces a change on first sign-in, so hand it over " +
+        "deliberately.",
+)
+data class SetPasswordRequest(
     @field:NotBlank @field:Size(min = 12, max = 128) val newPassword: String,
 )
 
@@ -74,9 +90,10 @@ data class AdminResponse(
     val createdAt: Instant,
     val lastLoginAt: Instant?,
     val roles: List<RoleSummary>,
+    val permissions: List<String>
 ) {
     companion object {
-        fun of(a: AdminUser, roles: List<Role>) = AdminResponse(
+        fun of(a: AdminUser, roles: List<Role>, permissions: List<String>) = AdminResponse(
             id = requireNotNull(a.id),
             email = a.email,
             username = a.username,
@@ -84,6 +101,7 @@ data class AdminResponse(
             createdAt = a.createdAt,
             lastLoginAt = a.lastLoginAt,
             roles = roles.map(RoleSummary::of),
+            permissions
         )
     }
 }

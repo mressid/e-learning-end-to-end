@@ -2,6 +2,7 @@ package com.elearning.admin.application
 
 import com.elearning.admin.infrastructure.AdminUserRoleRepository
 import com.elearning.admin.infrastructure.PermissionRepository
+import com.elearning.admin.infrastructure.RolePermissionRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -17,6 +18,7 @@ import java.util.UUID
 class PermissionService(
     private val adminUserRoles: AdminUserRoleRepository,
     private val permissions: PermissionRepository,
+    private val rolePermissionRepository: RolePermissionRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -37,6 +39,9 @@ class PermissionService(
         } else {
             adminUserRoles.permissionCodesOf(adminUserId).toSet()
         }
+
+    @Transactional(readOnly = true)
+    fun permissionRoles(roleIds: List<UUID>): Set<String> = rolePermissionRepository.permissionRolesOf(roleIds).toSet()
 
     @Transactional(readOnly = true)
     fun has(adminUserId: UUID, code: String): Boolean =

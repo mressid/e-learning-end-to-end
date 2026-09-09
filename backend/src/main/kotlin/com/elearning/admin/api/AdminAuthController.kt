@@ -2,6 +2,7 @@ package com.elearning.admin.api
 
 import com.elearning.admin.application.AdminAccountService
 import com.elearning.admin.application.AdminAuthenticationService
+import com.elearning.admin.application.PermissionService
 import com.elearning.admin.application.RoleService
 import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.security.CurrentAdmin
@@ -32,7 +33,8 @@ class AdminAuthController(
     private val accounts: AdminAccountService,
     private val roles: RoleService,
     private val currentAdmin: CurrentAdmin,
-) {
+    private val permissions: PermissionService,
+    ) {
 
     @PostMapping("/login")
     @Operation(summary = "Sign in to the dashboard")
@@ -60,7 +62,10 @@ class AdminAuthController(
     @Operation(summary = "The signed-in administrator, with roles and permissions")
     fun me(): AdminResponse {
         val id = currentAdmin.requireId()
-        return AdminResponse.of(accounts.get(id), roles.rolesOf(id))
+        val adminRoles = roles.rolesOf(id)
+        val adminRolesIds = adminRoles.mapNotNull {  it.id }
+        val permissionsOfRoles = permissions.permissionRoles(adminRolesIds)
+        return AdminResponse.of(accounts.get(id), adminRoles, permissionsOfRoles.toList())
     }
 
     @PostMapping("/me/password")

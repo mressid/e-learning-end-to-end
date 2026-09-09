@@ -41,8 +41,23 @@ class AdminAccountService(
     fun get(adminUserId: UUID): AdminUser = admins.findById(adminUserId)
         .orElseThrow { NotFoundException("ADMIN_NOT_FOUND", "No such administrator") }
 
+    /**
+     * Creates an administrator and, optionally, gives them their roles.
+     *
+     * One transaction on purpose. Assigning the roles from the controller after
+     * the account is saved would leave an administrator who exists but holds
+     * nothing behind if any role id turns out to be wrong - and an account with
+     * no roles has no permissions at all, so the failure is silent rather than
+     * loud. Here an unknown role rolls the whole thing back.
+     */
     @Transactional
-    fun create(email: String, username: String, password: String): AdminUser {
+    fun create(
+        email: String,
+        username: String,
+        password: String,
+        roleIds: List<UUID> = emptyList(),
+        grantedBy: UUID? = null,
+    ): AdminUser {
         if (admins.existsByEmailIgnoreCase(email)) {
             throw ConflictException("EMAIL_ALREADY_REGISTERED", "That email already has an admin account")
         }
@@ -62,6 +77,17 @@ class AdminAccountService(
             targetType = "ADMIN_USER",
             targetId = created.id,
         )
+
+        if (roleIds.isNotEmpty()) {
+            val id = requireNotNull(created.id)
+            // distinct(): sending the same role twice is a client mistake, not a
+            // reason to refuse the request.
+            roleIds.distinct().forEach { roleId ->
+                roles.assign(id, roleId, requireNotNull(grantedBy) {
+                    "grantedBy is required when assigning roles"
+                })
+            }
+        }
         return created
     }
 
@@ -87,6 +113,42 @@ class AdminAccountService(
         // session has to be ended here rather than waited out.
         if (status != AdminStatus.ACTIVE) refreshTokens.revokeAllForAdmin(adminUserId)
         return admin
+    }
+
+    /**
+     * Setting another administrator's password, because they have lost it.
+     *
+     * There is no reset-by-email on this side - admin accounts never had one,
+     * and an address that no longer reaches anyone is exactly the situation this
+     * exists for. A super admin sets a new password and hands it over the same
+     * way the first one was handed over.
+     *
+     * Refuses to act on the caller's own account, which is not squeamishness:
+     * [changeOwnPassword] demands the current password specifically so that a
+     * borrowed session cannot lock the real owner out, and allowing self-service
+     * here would be a door straight around that check.
+     *
+     * Their sessions end, so a password that was already shared with the wrong
+     * person stops being useful the moment it is replaced.
+     */
+    @Transactional
+    fun setPassword(adminUserId: UUID, newPassword: String, actorId: UUID) {
+        if (adminUserId == actorId) {
+            throw BusinessRuleException(
+                "CANNOT_RESET_OWN_PASSWORD",
+                "Change your own password through /admin/auth/me/password, which asks for the current one",
+            )
+        }
+        val admin = get(adminUserId)
+        admin.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))
+        admin.updatedAt = Instant.now()
+        refreshTokens.revokeAllForAdmin(adminUserId)
+        audit.record(
+            action = "admin.password_reset",
+            summary = "Reset the password of administrator ${admin.email}",
+            targetType = "ADMIN_USER",
+            targetId = adminUserId,
+        )
     }
 
     /**
