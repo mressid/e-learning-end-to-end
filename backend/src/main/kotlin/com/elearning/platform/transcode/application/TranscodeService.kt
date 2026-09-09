@@ -30,13 +30,14 @@ class TranscodeService(
     /**
      * Queues a job, or returns the existing one.
      *
-     * Idempotent by `(media, lesson)`: re-saving a lesson with the same video
-     * should not transcode it twice. A job that already failed is retried,
-     * because the fix for a transient failure is to ask again.
+     * Idempotent by file: re-saving a lesson with the same video should not
+     * transcode it twice, and neither should a second lesson using it. A job
+     * that already failed is retried, because the fix for a transient failure
+     * is to ask again.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun enqueue(mediaId: UUID, lessonId: UUID?): TranscodeJob {
-        val existing = jobs.findByMediaIdAndLessonId(mediaId, lessonId).orElse(null)
+    fun enqueue(mediaId: UUID): TranscodeJob {
+        val existing = jobs.findByMediaId(mediaId).orElse(null)
         if (existing != null) {
             if (existing.status == TranscodeStatus.FAILED) {
                 existing.status = TranscodeStatus.QUEUED
@@ -44,12 +45,12 @@ class TranscodeService(
             }
             return existing
         }
-        return jobs.save(TranscodeJob(mediaId = mediaId, lessonId = lessonId))
+        return jobs.save(TranscodeJob(mediaId = mediaId))
     }
 
     /** Committed before the worker can possibly read it. */
-    fun enqueueAndPublish(mediaId: UUID, lessonId: UUID?) {
-        val job = enqueue(mediaId, lessonId)
+    fun enqueueAndPublish(mediaId: UUID) {
+        val job = enqueue(mediaId)
         val id = requireNotNull(job.id)
         runCatching { publisher.requestTranscode(id) }
             .onFailure {

@@ -11,9 +11,10 @@ import java.util.UUID
  *
  * This exists because the **database will not stop the delete**. Almost every
  * reference to `media_objects` is `ON DELETE SET NULL`, so removing a file that
- * a lesson uses does not fail - it quietly empties the lesson's video and
- * leaves a course that plays nothing. Only `resource_files` is RESTRICT.
- * Silence is the failure mode, which is why the check is up front.
+ * something still shows does not fail - it quietly empties whatever displayed
+ * it and leaves a course avatar, a poster or a stream that resolves to
+ * nothing. Only `resource_files` is RESTRICT. Silence is the failure mode,
+ * which is why the check is up front.
  */
 interface MediaReferenceProbe {
 

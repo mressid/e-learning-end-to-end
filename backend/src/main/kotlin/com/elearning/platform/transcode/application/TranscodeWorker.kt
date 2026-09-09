@@ -16,8 +16,8 @@ import java.util.UUID
  * FFmpeg crash would take the API down with it.
  *
  * Failure degrades rather than breaks: if this never succeeds,
- * `hls_manifest_media_id` stays null and the player falls back to the original
- * upload. The lesson still plays. Same rule certificate rendering follows - a
+ * `media_objects.hls_manifest_media_id` stays null and the player falls back to
+ * the original upload. The lesson still plays. Same rule certificate rendering follows - a
  * derivative failing must not damage the thing it was derived from.
  */
 @Component
@@ -62,7 +62,7 @@ class TranscodeWorker(
             val bytes = storage.get(source.bucket, source.objectKey)
             val result = pipeline.transcode(bytes, source.originalFilename)
 
-            writer.publish(jobId, job.lessonId, result)
+            writer.publish(jobId, job.mediaId, result)
             service.markSucceeded(jobId)
             log.info("Transcoded job {} into {} segments", jobId, result.segments.size)
         } catch (ex: Exception) {

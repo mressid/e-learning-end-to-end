@@ -1,15 +1,19 @@
 package com.elearning.learning.application
 
-import com.elearning.learning.domain.ArticleContent
 import com.elearning.learning.domain.CompletionRule
-import com.elearning.learning.domain.DocumentContent
 import com.elearning.learning.domain.Lesson
-import com.elearning.learning.domain.LessonContentType
-import com.elearning.learning.domain.VideoContent
-import com.elearning.learning.infrastructure.ArticleContentRepository
-import com.elearning.learning.infrastructure.DocumentContentRepository
+import com.elearning.learning.domain.Resource
+import com.elearning.learning.domain.ResourceContent
+import com.elearning.learning.domain.ResourceContentType
+import com.elearning.learning.domain.ResourceFile
+import com.elearning.learning.domain.ResourceType
+import com.elearning.learning.domain.ResourceUrl
+import com.elearning.learning.domain.SourceType
 import com.elearning.learning.infrastructure.LessonRepository
-import com.elearning.learning.infrastructure.VideoContentRepository
+import com.elearning.learning.infrastructure.ResourceContentRepository
+import com.elearning.learning.infrastructure.ResourceFileRepository
+import com.elearning.learning.infrastructure.ResourceRepository
+import com.elearning.learning.infrastructure.ResourceUrlRepository
 import com.elearning.platform.media.MediaService
 import com.elearning.platform.transcode.application.TranscodeService
 import com.elearning.shared.errors.BusinessRuleException
@@ -23,6 +27,12 @@ import java.util.UUID
 /**
  * Authoring and reading lesson content.
  *
+ * A lesson is a description, a duration, a completion rule, and one resource
+ * holding the material. The resource decides what the material is and where it
+ * lives — the two questions a single `contentType` used to answer badly — so a
+ * lesson can now be an audio file or a link without a table being invented for
+ * each.
+ *
  * Who may do what:
  *   author -> course editors (owner or co-instructor)
  *   read   -> course editors, or a student with an active enrolment
@@ -30,9 +40,10 @@ import java.util.UUID
 @Service
 class LessonService(
     private val lessons: LessonRepository,
-    private val videos: VideoContentRepository,
-    private val articles: ArticleContentRepository,
-    private val documents: DocumentContentRepository,
+    private val resources: ResourceRepository,
+    private val files: ResourceFileRepository,
+    private val urls: ResourceUrlRepository,
+    private val contents: ResourceContentRepository,
     private val catalog: CourseCatalog,
     private val enrollmentService: EnrollmentService,
     private val mediaService: MediaService,
@@ -46,9 +57,14 @@ class LessonService(
             throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
         }
 
-        val lesson = lessons.findById(itemId).orElse(null)
+        val existing = lessons.findById(itemId).orElse(null)
+        val previous = existing?.let { resources.findById(it.primaryResourceId).orElse(null) }
+
+        val resource = writeMaterial(courseId, command, previous, editorId)
+
+        val lesson = existing
             ?.apply {
-                contentType = command.contentType
+                primaryResourceId = requireNotNull(resource.id)
                 description = command.description
                 durationSeconds = command.durationSeconds
                 completionRule = command.completionRule ?: completionRule
@@ -56,26 +72,132 @@ class LessonService(
             ?: lessons.save(
                 Lesson(
                     courseItemId = itemId,
-                    contentType = command.contentType,
+                    primaryResourceId = requireNotNull(resource.id),
                     description = command.description,
                     durationSeconds = command.durationSeconds,
                     completionRule = command.completionRule ?: CompletionRule.MANUAL,
                 ),
             )
 
-        when (command.contentType) {
-            LessonContentType.VIDEO -> saveVideo(itemId, courseId, command, editorId)
-            LessonContentType.ARTICLE -> saveArticle(itemId, command)
-            LessonContentType.DOCUMENT -> saveDocument(itemId, courseId, command, editorId)
-            // The V1 schema has no content table for these, so accepting one
-            // would store a lesson whose content could never be read back.
-            LessonContentType.AUDIO, LessonContentType.EXTERNAL ->
-                throw BusinessRuleException(
-                    "CONTENT_TYPE_NOT_SUPPORTED",
-                    "${command.contentType} lessons are not supported yet",
-                )
+        return view(lesson, resource)
+    }
+
+    /**
+     * Writes the material and returns the resource holding it.
+     *
+     * `sourceType` is fixed on a resource — its content lives in a different
+     * table for each — so changing a lesson from a file to typed text makes a
+     * new resource rather than editing the old one. The old one is left where
+     * it is: it is a library material like any other, often an upload the
+     * author made, and a lesson changing shape is not a reason to destroy it.
+     * Anything else stays in place and is edited, so rewriting an article does
+     * not litter the library with a resource per draft.
+     */
+    private fun writeMaterial(
+        courseId: UUID,
+        command: SaveLessonCommand,
+        previous: Resource?,
+        editorId: UUID,
+    ): Resource {
+        val resource = previous?.takeIf { it.sourceType == command.sourceType }?.apply {
+            title = command.title
+            resourceType = command.resourceType
+            touch()
+        } ?: resources.save(
+            Resource(
+                title = command.title,
+                resourceType = command.resourceType,
+                sourceType = command.sourceType,
+                createdBy = editorId,
+            ),
+        )
+        val resourceId = requireNotNull(resource.id)
+
+        when (command.sourceType) {
+            SourceType.FILE -> writeFile(resourceId, courseId, command, editorId)
+            SourceType.URL -> writeUrl(resourceId, command)
+            SourceType.INLINE -> writeInline(resourceId, command)
         }
-        return view(lesson)
+        return resource
+    }
+
+    private fun writeFile(
+        resourceId: UUID,
+        courseId: UUID,
+        command: SaveLessonCommand,
+        editorId: UUID,
+    ) {
+        val existing = files.findById(resourceId).orElse(null)
+
+        // Leaving the file out of an update keeps the one already attached.
+        // Media ids are deliberately never given back to the client, so an
+        // author changing a description has nothing to re-send; demanding it
+        // made every edit after the first one impossible.
+        val mediaId = command.mediaId
+            ?: existing?.mediaId
+            ?: throw BusinessRuleException("MEDIA_REQUIRED", "A file lesson needs a mediaId")
+
+        val media = requireAttachable(mediaId, courseId, editorId)
+        val isNewFile = existing == null || existing.mediaId != mediaId
+
+        if (existing == null) {
+            files.save(
+                ResourceFile(
+                    resourceId = resourceId,
+                    mediaId = mediaId,
+                    filename = media.originalFilename,
+                    mimeType = media.mimeType,
+                    extension = media.originalFilename?.substringAfterLast('.', "")?.ifBlank { null },
+                    sizeBytes = media.sizeBytes,
+                ),
+            )
+        } else if (isNewFile) {
+            existing.mediaId = mediaId
+            existing.filename = media.originalFilename
+            existing.mimeType = media.mimeType
+            existing.extension = media.originalFilename?.substringAfterLast('.', "")?.ifBlank { null }
+            existing.sizeBytes = media.sizeBytes
+        }
+
+        // Queued here rather than when the upload completes, because media has
+        // no idea whether a file is a lesson video, a submission attachment or
+        // a reading - transcoding every uploaded MP4 would burn CPU on files
+        // nobody streams. Published after this transaction commits, so the
+        // worker cannot win the race to a row that is not there yet.
+        //
+        // Only for a video, and only for one not encoded already: re-queueing
+        // the same file every time somebody fixes a sentence would spend a
+        // CPU-hour on a change that cannot affect the output.
+        if (command.resourceType == ResourceType.VIDEO && isNewFile) {
+            transcoding.enqueueAndPublish(mediaId)
+        }
+    }
+
+    private fun writeUrl(resourceId: UUID, command: SaveLessonCommand) {
+        val url = command.url?.trim()
+        if (url.isNullOrBlank()) {
+            throw BusinessRuleException("URL_REQUIRED", "A link lesson needs a url")
+        }
+        // Only http(s): a javascript: or data: link would be handed straight to
+        // a student's browser.
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw BusinessRuleException("INVALID_URL", "Only http and https URLs are allowed")
+        }
+        val existing = urls.findById(resourceId).orElse(null)
+        if (existing == null) urls.save(ResourceUrl(resourceId = resourceId, url = url)) else existing.url = url
+    }
+
+    private fun writeInline(resourceId: UUID, command: SaveLessonCommand) {
+        val body = command.content
+            ?: throw BusinessRuleException("CONTENT_REQUIRED", "A written lesson needs content")
+        val format = command.contentFormat ?: ResourceContentType.MARKDOWN
+        val existing = contents.findById(resourceId).orElse(null)
+        if (existing == null) {
+            contents.save(ResourceContent(resourceId = resourceId, contentType = format, content = body))
+        } else {
+            existing.content = body
+            existing.contentType = format
+        }
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +205,7 @@ class LessonService(
         requireReadableLesson(itemId, viewerId)
         val lesson = lessons.findById(itemId)
             .orElseThrow { NotFoundException("LESSON_NOT_FOUND", "Lesson not found") }
-        return view(lesson)
+        return view(lesson, requireMaterial(lesson))
     }
 
     /**
@@ -97,92 +219,20 @@ class LessonService(
         requireReadableLesson(itemId, viewerId)
         val lesson = lessons.findById(itemId)
             .orElseThrow { NotFoundException("LESSON_NOT_FOUND", "Lesson not found") }
-
-        val mediaId = when (lesson.contentType) {
-            LessonContentType.VIDEO -> videos.findById(itemId).orElse(null)?.mediaId
-            LessonContentType.DOCUMENT -> documents.findById(itemId).orElse(null)?.mediaId
-            else -> null
-        } ?: throw BusinessRuleException("LESSON_HAS_NO_FILE", "This lesson has no downloadable file")
-
-        return mediaService.downloadUrlForAuthorizedCaller(mediaId)
+        val material = requireMaterial(lesson)
+        if (material.sourceType != SourceType.FILE) {
+            throw BusinessRuleException("LESSON_HAS_NO_FILE", "This lesson has no downloadable file")
+        }
+        val file = files.findById(lesson.primaryResourceId)
+            .orElseThrow { NotFoundException("LESSON_FILE_MISSING", "Lesson file not found") }
+        return mediaService.downloadUrlForAuthorizedCaller(file.mediaId)
     }
 
-    private fun saveVideo(itemId: UUID, courseId: UUID, command: SaveLessonCommand, editorId: UUID) {
-        val existing = videos.findById(itemId).orElse(null)
-
-        // Leaving the file out of an update keeps the one already attached.
-        // Media ids are deliberately never given back to the client, so an
-        // author changing a video lesson's description has nothing to re-send -
-        // demanding it here made every edit after the first one impossible.
-        // Still required when there is no lesson yet, which is what a client
-        // creating one has to satisfy.
-        val mediaId = command.mediaId
-            ?: existing?.mediaId
-            ?: throw BusinessRuleException("MEDIA_REQUIRED", "A video lesson needs a mediaId")
-        val thumbnailMediaId = command.thumbnailMediaId ?: existing?.thumbnailMediaId
-
-        requireAttachable(mediaId, courseId, editorId)
-        command.thumbnailMediaId?.let { requireAttachable(it, courseId, editorId) }
-
-        val isNewFile = existing == null || existing.mediaId != mediaId
-
-        if (existing == null) {
-            videos.save(
-                VideoContent(
-                    lessonId = itemId,
-                    mediaId = mediaId,
-                    thumbnailMediaId = thumbnailMediaId,
-                    durationSeconds = command.durationSeconds,
-                ),
-            )
-        } else {
-            // Re-pointing at a different file invalidates the renditions built
-            // from the old one, so they are cleared rather than left to serve
-            // the previous video under the new lesson.
-            if (isNewFile) existing.hlsManifestMediaId = null
-            existing.mediaId = mediaId
-            existing.thumbnailMediaId = thumbnailMediaId
-            existing.durationSeconds = command.durationSeconds
-        }
-
-        // Queued here rather than when the upload completes, because media has
-        // no idea whether a file is a lesson video, a submission attachment or
-        // a resource - transcoding every uploaded MP4 would burn CPU on files
-        // nobody streams. Published after this transaction commits, so the
-        // worker cannot win the race to a row that is not there yet.
-        //
-        // Only for a file this lesson has not encoded already: re-queueing the
-        // same video every time somebody fixes a sentence in the description
-        // would spend a CPU-hour on a change that cannot affect the output.
-        if (isNewFile) transcoding.enqueueAndPublish(mediaId, itemId)
-    }
-
-    private fun saveArticle(itemId: UUID, command: SaveLessonCommand) {
-        val body = command.content
-            ?: throw BusinessRuleException("CONTENT_REQUIRED", "An article lesson needs content")
-        val existing = articles.findById(itemId).orElse(null)
-        if (existing == null) {
-            articles.save(ArticleContent(lessonId = itemId, content = body))
-        } else {
-            existing.content = body
-        }
-    }
-
-    private fun saveDocument(itemId: UUID, courseId: UUID, command: SaveLessonCommand, editorId: UUID) {
-        val existing = documents.findById(itemId).orElse(null)
-
-        // As with a video: omitting the file on an update keeps the one that is
-        // there, because the client was never told which one it is.
-        val mediaId = command.mediaId
-            ?: existing?.mediaId
-            ?: throw BusinessRuleException("MEDIA_REQUIRED", "A document lesson needs a mediaId")
-        requireAttachable(mediaId, courseId, editorId)
-
-        if (existing == null) {
-            documents.save(DocumentContent(lessonId = itemId, mediaId = mediaId))
-        } else {
-            existing.mediaId = mediaId
-        }
+    /** The media behind a lesson, for the playback path. Null unless it is a file. */
+    @Transactional(readOnly = true)
+    fun fileMediaIdOf(itemId: UUID): UUID? {
+        val lesson = lessons.findById(itemId).orElse(null) ?: return null
+        return files.findById(lesson.primaryResourceId).orElse(null)?.mediaId
     }
 
     /**
@@ -191,13 +241,13 @@ class LessonService(
      * editor who guessed another user's media id could republish their file to
      * their own students.
      */
-    private fun requireAttachable(mediaId: UUID, courseId: UUID, editorId: UUID) {
-        val media = mediaService.requireAvailable(mediaId)
-        val uploader = media.createdBy
-        if (uploader != editorId && (uploader == null || !catalog.canEdit(courseId, uploader))) {
-            throw ForbiddenException("MEDIA_ACCESS_DENIED", "That media object is not yours to attach")
+    private fun requireAttachable(mediaId: UUID, courseId: UUID, editorId: UUID) =
+        mediaService.requireAvailable(mediaId).also { media ->
+            val uploader = media.createdBy
+            if (uploader != editorId && (uploader == null || !catalog.canEdit(courseId, uploader))) {
+                throw ForbiddenException("MEDIA_ACCESS_DENIED", "That media object is not yours to attach")
+            }
         }
-    }
 
     private fun requireCourseOfLessonItem(itemId: UUID): UUID {
         val courseId = catalog.courseIdOfItem(itemId)
@@ -217,38 +267,61 @@ class LessonService(
         return courseId
     }
 
-    private fun view(lesson: Lesson): LessonView = LessonView(
-        courseItemId = lesson.courseItemId,
-        contentType = lesson.contentType,
-        description = lesson.description,
-        durationSeconds = lesson.durationSeconds,
-        completionRule = lesson.completionRule,
-        article = articles.findById(lesson.courseItemId).orElse(null)?.content,
-        // Media ids stay internal: readers get a URL from contentUrl() instead.
-        hasFile = when (lesson.contentType) {
-            LessonContentType.VIDEO -> videos.findById(lesson.courseItemId).orElse(null)?.mediaId != null
-            LessonContentType.DOCUMENT -> documents.findById(lesson.courseItemId).orElse(null)?.mediaId != null
-            else -> false
-        },
-    )
+    private fun requireMaterial(lesson: Lesson): Resource =
+        resources.findById(lesson.primaryResourceId)
+            .orElseThrow { NotFoundException("LESSON_CONTENT_MISSING", "Lesson content not found") }
+
+    private fun view(lesson: Lesson, material: Resource): LessonView {
+        val resourceId = lesson.primaryResourceId
+        val inline = if (material.sourceType == SourceType.INLINE) {
+            contents.findById(resourceId).orElse(null)
+        } else {
+            null
+        }
+        return LessonView(
+            courseItemId = lesson.courseItemId,
+            title = material.title,
+            resourceType = material.resourceType,
+            sourceType = material.sourceType,
+            description = lesson.description,
+            durationSeconds = lesson.durationSeconds,
+            completionRule = lesson.completionRule,
+            content = inline?.content,
+            contentFormat = inline?.contentType,
+            url = if (material.sourceType == SourceType.URL) {
+                urls.findById(resourceId).orElse(null)?.url
+            } else {
+                null
+            },
+            // Media ids stay internal: readers get a URL from contentUrl().
+            hasFile = material.sourceType == SourceType.FILE && files.findById(resourceId).isPresent,
+        )
+    }
 }
 
 data class SaveLessonCommand(
-    val contentType: LessonContentType,
+    val title: String,
+    val resourceType: ResourceType,
+    val sourceType: SourceType,
     val description: String? = null,
     val durationSeconds: Int? = null,
     val completionRule: CompletionRule? = null,
     val content: String? = null,
+    val contentFormat: ResourceContentType? = null,
+    val url: String? = null,
     val mediaId: UUID? = null,
-    val thumbnailMediaId: UUID? = null,
 )
 
 data class LessonView(
     val courseItemId: UUID,
-    val contentType: LessonContentType,
+    val title: String,
+    val resourceType: ResourceType,
+    val sourceType: SourceType,
     val description: String?,
     val durationSeconds: Int?,
     val completionRule: CompletionRule,
-    val article: String?,
+    val content: String?,
+    val contentFormat: ResourceContentType?,
+    val url: String?,
     val hasFile: Boolean,
 )

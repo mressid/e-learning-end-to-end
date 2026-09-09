@@ -1,6 +1,6 @@
 package com.elearning.platform.transcode.application
 
-import com.elearning.learning.infrastructure.VideoContentRepository
+import com.elearning.learning.application.LessonService
 import com.elearning.platform.media.MediaService
 import com.elearning.platform.media.ObjectStorage
 import com.elearning.shared.errors.BusinessRuleException
@@ -28,7 +28,7 @@ import java.util.UUID
  */
 @Service
 class PlaybackService(
-    private val videos: VideoContentRepository,
+    private val lessons: LessonService,
     private val media: MediaService,
     private val storage: ObjectStorage,
     private val properties: PlaybackProperties,
@@ -42,9 +42,11 @@ class PlaybackService(
      */
     @Transactional(readOnly = true)
     fun manifestFor(lessonId: UUID): String {
-        val video = videos.findById(lessonId).orElse(null)
+        val sourceId = lessons.fileMediaIdOf(lessonId)
             ?: throw BusinessRuleException("LESSON_HAS_NO_VIDEO", "This lesson has no video")
-        val manifestId = video.hlsManifestMediaId
+        // The rendition hangs off the file, not off the lesson, so a video used
+        // by more than one lesson is encoded once and streams everywhere.
+        val manifestId = media.requireAvailable(sourceId).hlsManifestMediaId
             ?: throw BusinessRuleException(
                 "STREAM_NOT_READY",
                 "This video is still being processed; the original download still works",

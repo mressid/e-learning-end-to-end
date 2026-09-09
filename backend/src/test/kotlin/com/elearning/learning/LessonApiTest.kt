@@ -127,10 +127,12 @@ class LessonApiTest(
         saveLesson(
             course.teacher,
             course.itemId,
-            """{"contentType":"ARTICLE","content":"# Chapter one","description":"intro"}""",
+            """{"title":"Chapter one","resourceType":"DOCUMENT","sourceType":"INLINE","content":"# Chapter one","description":"intro"}""",
         ).andExpect {
             status { isOk() }
-            jsonPath("$.contentType") { value("ARTICLE") }
+            jsonPath("$.resourceType") { value("DOCUMENT") }
+            jsonPath("$.sourceType") { value("INLINE") }
+            jsonPath("$.contentFormat") { value("MARKDOWN") }
             jsonPath("$.content") { value("# Chapter one") }
             jsonPath("$.hasFile") { value(false) }
         }
@@ -139,9 +141,9 @@ class LessonApiTest(
     @Test
     fun `saving is idempotent - the same item keeps one lesson`() {
         val course = publishedCourseWithItem()
-        saveLesson(course.teacher, course.itemId, """{"contentType":"ARTICLE","content":"first"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"first"}""")
             .andExpect { status { isOk() } }
-        saveLesson(course.teacher, course.itemId, """{"contentType":"ARTICLE","content":"second"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"second"}""")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.content") { value("second") }
@@ -153,7 +155,7 @@ class LessonApiTest(
         val course = publishedCourseWithItem()
         val stranger = tokenFor("stranger")
 
-        saveLesson(stranger, course.itemId, """{"contentType":"ARTICLE","content":"hijack"}""")
+        saveLesson(stranger, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"hijack"}""")
             .andExpect {
                 status { isForbidden() }
                 jsonPath("$.code") { value("COURSE_ACCESS_DENIED") }
@@ -161,14 +163,14 @@ class LessonApiTest(
     }
 
     @Test
-    fun `content is required for the declared type`() {
+    fun `content is required for the declared source`() {
         val course = publishedCourseWithItem()
 
-        saveLesson(course.teacher, course.itemId, """{"contentType":"ARTICLE"}""").andExpect {
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE"}""").andExpect {
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("CONTENT_REQUIRED") }
         }
-        saveLesson(course.teacher, course.itemId, """{"contentType":"VIDEO"}""").andExpect {
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"VIDEO","sourceType":"FILE"}""").andExpect {
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("MEDIA_REQUIRED") }
         }
@@ -178,7 +180,7 @@ class LessonApiTest(
     fun `editing a file lesson keeps the file it already has`() {
         val course = publishedCourseWithItem()
         val mediaId = uploadFile(course.teacher, "slides")
-        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$mediaId"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$mediaId"}""")
             .andExpect { status { isOk() } }
 
         // The media id is never handed back, so an author changing only the
@@ -186,7 +188,7 @@ class LessonApiTest(
         saveLesson(
             course.teacher,
             course.itemId,
-            """{"contentType":"DOCUMENT","description":"Read this first"}""",
+            """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","description":"Read this first"}""",
         ).andExpect {
             status { isOk() }
             jsonPath("$.hasFile") { value(true) }
@@ -198,12 +200,49 @@ class LessonApiTest(
         }.andExpect { status { isOk() } }
     }
 
+    /**
+     * Audio and links used to be refused: the lesson had a name for them and no
+     * table to put them in. A lesson's body is a resource now, and the resource
+     * model always knew how to hold both.
+     */
     @Test
-    fun `content types with no storage table are rejected rather than half-saved`() {
+    fun `a lesson can be an audio file or a link`() {
         val course = publishedCourseWithItem()
-        saveLesson(course.teacher, course.itemId, """{"contentType":"AUDIO"}""").andExpect {
+        val mediaId = uploadFile(course.teacher, "the recording")
+
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"Episode one","resourceType":"AUDIO","sourceType":"FILE","mediaId":"$mediaId"}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.resourceType") { value("AUDIO") }
+            jsonPath("$.sourceType") { value("FILE") }
+            jsonPath("$.hasFile") { value(true) }
+        }
+
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"Read this","resourceType":"LINK","sourceType":"URL","url":"https://example.com/paper"}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.sourceType") { value("URL") }
+            jsonPath("$.url") { value("https://example.com/paper") }
+            jsonPath("$.hasFile") { value(false) }
+        }
+    }
+
+    @Test
+    fun `a link lesson refuses a scheme a browser would run`() {
+        val course = publishedCourseWithItem()
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"LINK","sourceType":"URL","url":"javascript:alert(1)"}""",
+        ).andExpect {
             status { isUnprocessableEntity() }
-            jsonPath("$.code") { value("CONTENT_TYPE_NOT_SUPPORTED") }
+            jsonPath("$.code") { value("INVALID_URL") }
         }
     }
 
@@ -217,7 +256,7 @@ class LessonApiTest(
         )
         val mediaId = objectMapper.readTree(ticket).get("mediaId").asString()
 
-        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$mediaId"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$mediaId"}""")
             .andExpect {
                 status { isUnprocessableEntity() }
                 jsonPath("$.code") { value("MEDIA_NOT_AVAILABLE") }
@@ -230,7 +269,7 @@ class LessonApiTest(
         val outsider = tokenFor("outsider")
         val theirMedia = uploadFile(outsider, "private")
 
-        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$theirMedia"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$theirMedia"}""")
             .andExpect {
                 status { isForbidden() }
                 jsonPath("$.code") { value("MEDIA_ACCESS_DENIED") }
@@ -241,7 +280,7 @@ class LessonApiTest(
     fun `an enrolled student reads the lesson and fetches its file without seeing the media id`() {
         val course = publishedCourseWithItem()
         val mediaId = uploadFile(course.teacher, "lecture notes body")
-        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$mediaId"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$mediaId"}""")
             .andExpect { status { isOk() } }
 
         val student = tokenFor("student")
@@ -270,7 +309,7 @@ class LessonApiTest(
     fun `a student who is not enrolled cannot read the lesson or its file`() {
         val course = publishedCourseWithItem()
         val mediaId = uploadFile(course.teacher, "secret")
-        saveLesson(course.teacher, course.itemId, """{"contentType":"DOCUMENT","mediaId":"$mediaId"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$mediaId"}""")
             .andExpect { status { isOk() } }
 
         val stranger = tokenFor("stranger")
@@ -288,7 +327,7 @@ class LessonApiTest(
     @Test
     fun `an article lesson has no file to download`() {
         val course = publishedCourseWithItem()
-        saveLesson(course.teacher, course.itemId, """{"contentType":"ARTICLE","content":"text"}""")
+        saveLesson(course.teacher, course.itemId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"text"}""")
             .andExpect { status { isOk() } }
 
         mockMvc.get("/api/v1/items/${course.itemId}/lesson/content-url") {
@@ -306,7 +345,7 @@ class LessonApiTest(
         val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
         val quizId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"Q","type":"QUIZ"}"""))
 
-        saveLesson(teacher, quizId, """{"contentType":"ARTICLE","content":"nope"}""").andExpect {
+        saveLesson(teacher, quizId, """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"nope"}""").andExpect {
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("NOT_A_LESSON_ITEM") }
         }

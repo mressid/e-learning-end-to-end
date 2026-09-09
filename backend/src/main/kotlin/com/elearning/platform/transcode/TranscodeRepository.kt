@@ -6,7 +6,6 @@ import java.util.UUID
 
 interface TranscodeRepository : JpaRepository<TranscodeJob, UUID> {
 
-    fun findByMediaIdAndLessonId(mediaId: UUID, lessonId: UUID?): Optional<TranscodeJob>
+    fun findByMediaId(mediaId: UUID): Optional<TranscodeJob>
 
-    fun findByLessonId(lessonId: UUID): List<TranscodeJob>
 }

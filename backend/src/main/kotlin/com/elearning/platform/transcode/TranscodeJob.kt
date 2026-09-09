@@ -21,11 +21,15 @@ import java.util.UUID
 @Table(name = "transcode_jobs")
 class TranscodeJob(
 
+    /**
+     * The upload being encoded, and the whole of the job's identity.
+     *
+     * It used to carry the lesson too, and be unique per pair. The rendition
+     * hangs off the file now, so a second lesson using the same upload has
+     * nothing to add: it would queue an identical encode of identical bytes.
+     */
     @Column(name = "media_id", nullable = false)
     val mediaId: UUID,
-
-    @Column(name = "lesson_id")
-    val lessonId: UUID? = null,
 ) {
     @Id
     @GeneratedValue

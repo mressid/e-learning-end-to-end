@@ -48,7 +48,7 @@ class LessonController(
         ),
         ApiResponse(
             responseCode = "422",
-            description = "Content missing for the chosen type, or the upload is not complete",
+            description = "Content missing for the chosen source, or the upload is not complete",
             content = [Content(schema = Schema(implementation = ApiError::class))],
         ),
     )
@@ -59,13 +59,16 @@ class LessonController(
         lessonService.upsert(
             itemId,
             SaveLessonCommand(
-                contentType = request.contentType,
+                title = request.title,
+                resourceType = request.resourceType,
+                sourceType = request.sourceType,
                 description = request.description,
                 durationSeconds = request.durationSeconds,
                 completionRule = request.completionRule,
                 content = request.content,
+                contentFormat = request.contentFormat,
+                url = request.url,
                 mediaId = request.mediaId,
-                thumbnailMediaId = request.thumbnailMediaId,
             ),
             editorId = currentUser.requireId(),
         ),

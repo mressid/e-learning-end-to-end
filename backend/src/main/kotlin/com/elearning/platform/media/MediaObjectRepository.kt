@@ -22,6 +22,17 @@ interface MediaObjectRepository : JpaRepository<MediaObject, UUID> {
     fun searchByFilename(@Param("term") term: String, pageable: Pageable): Page<MediaObject>
 
 
+    /**
+     * Whether some other file names this one as its rendition.
+     *
+     * A manifest or a poster is referenced by the media object it was derived
+     * from, so media now answers for its own derivatives rather than asking a
+     * module that happens to use them.
+     */
+    fun existsByHlsManifestMediaId(hlsManifestMediaId: UUID): Boolean
+
+    fun existsByPosterMediaId(posterMediaId: UUID): Boolean
+
     /** Oldest first, bounded by the caller's page size. */
     fun findByStatusAndCreatedAtBefore(
         status: MediaStatus,

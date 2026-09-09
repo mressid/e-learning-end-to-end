@@ -92,7 +92,7 @@ class NotificationAndCertificateTest(
         mockMvc.put("/api/v1/items/$itemId/lesson") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $teacher")
-            content = """{"contentType":"ARTICLE","content":"body"}"""
+            content = """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"body"}"""
         }.andExpect { status { isOk() } }
         mockMvc.post("/api/v1/courses/$courseId/publish") { header("Authorization", "Bearer $teacher") }
             .andExpect { status { isOk() } }

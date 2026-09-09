@@ -1,6 +1,6 @@
 package com.elearning.platform.transcode.application
 
-import com.elearning.learning.infrastructure.VideoContentRepository
+import com.elearning.platform.media.MediaObjectRepository
 import com.elearning.platform.media.MediaService
 import com.elearning.platform.media.ObjectStorage
 import com.elearning.platform.media.StorageProperties
@@ -10,13 +10,13 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 /**
- * Stores the renditions and points the lesson at them.
+ * Stores the renditions and points the source file at them.
  *
  * A separate bean from [TranscodeWorker] for the reason the two token-family
  * revokers already document: Spring applies `@Transactional` through a proxy,
  * so calling this from a method of the worker would silently run it with no
  * transaction at all - the writes would be dirty-checked into nothing and the
- * lesson would stay unlinked while the job reported success. Caught by a test
+ * file would stay unlinked while the job reported success. Caught by a test
  * that asked for the manifest and got STREAM_NOT_READY.
  */
 @Service
@@ -24,7 +24,7 @@ class TranscodeResultWriter(
     private val storage: ObjectStorage,
     private val storageProperties: StorageProperties,
     private val media: MediaService,
-    private val videos: VideoContentRepository,
+    private val mediaObjects: MediaObjectRepository,
 ) {
 
     /**
@@ -35,7 +35,7 @@ class TranscodeResultWriter(
      * the rest of the application refers to.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun publish(jobId: UUID, lessonId: UUID?, result: TranscodeResult) {
+    fun publish(jobId: UUID, sourceMediaId: UUID, result: TranscodeResult) {
         val bucket = storageProperties.mediaBucket
         val prefix = "hls/$jobId"
 
@@ -49,12 +49,13 @@ class TranscodeResultWriter(
         )
         val poster = result.poster?.let { media.storeGenerated("$prefix/poster.jpg", "image/jpeg", it) }
 
-        if (lessonId == null) return
-        val video = videos.findById(lessonId).orElse(null) ?: return
-        video.hlsManifestMediaId = manifest.id
-        // Only fill a poster the author has not chosen: an extracted frame is a
+        // Written onto the file rather than onto whatever refers to it. One
+        // upload used by two lessons is encoded once and both stream it.
+        val source = mediaObjects.findById(sourceMediaId).orElse(null) ?: return
+        source.hlsManifestMediaId = manifest.id
+        // Only fill a poster nobody has chosen: an extracted frame is a
         // fallback, not an override of somebody's deliberate choice.
-        if (video.thumbnailMediaId == null) video.thumbnailMediaId = poster?.id
-        if (video.durationSeconds == null) video.durationSeconds = result.durationSeconds
+        if (source.posterMediaId == null) source.posterMediaId = poster?.id
+        if (source.durationSeconds == null) source.durationSeconds = result.durationSeconds
     }
 }

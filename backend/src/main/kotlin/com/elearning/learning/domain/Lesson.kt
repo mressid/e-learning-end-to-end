@@ -8,9 +8,6 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.util.UUID
 
-/** Mirrors `lessons.content_type`. */
-enum class LessonContentType { VIDEO, ARTICLE, DOCUMENT, AUDIO, EXTERNAL }
-
 /** Mirrors `lessons.completion_rule`. */
 enum class CompletionRule { MANUAL, VIEW, PERCENTAGE, DURATION }
 
@@ -18,8 +15,14 @@ enum class CompletionRule { MANUAL, VIEW, PERCENTAGE, DURATION }
  * The lesson behind a LESSON-type course item.
  *
  * Shares its primary key with `course_items`: a lesson has no identity of its
- * own, it is what a particular item *is*. The content itself lives in a
- * per-type table so a video and an article need not share one wide row.
+ * own, it is what a particular item *is*.
+ *
+ * What the lesson teaches with is a [Resource], not a column here. A resource
+ * already separates what a material is from where it lives, and records the
+ * format of text held inline; a `content_type` on the lesson answered both
+ * questions with one word and could answer neither for audio or for a link.
+ * What is left on this row is what belongs to the lesson rather than to the
+ * material: what it is about, how long it takes, when it counts as done.
  */
 @Entity
 @Table(name = "lessons")
@@ -29,9 +32,13 @@ class Lesson(
     @Column(name = "course_item_id", nullable = false, updatable = false)
     val courseItemId: UUID,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "content_type", nullable = false)
-    var contentType: LessonContentType,
+    /**
+     * The material itself. Never null: a lesson with nothing to teach is a
+     * course item that has not been written yet, which is the absence of this
+     * row rather than a row with an empty one.
+     */
+    @Column(name = "primary_resource_id", nullable = false)
+    var primaryResourceId: UUID,
 
     @Column
     var description: String? = null,

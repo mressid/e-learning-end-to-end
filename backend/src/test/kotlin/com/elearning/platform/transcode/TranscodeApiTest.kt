@@ -130,7 +130,12 @@ class TranscodeApiTest(
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $teacher")
             content = objectMapper.writeValueAsString(
-                mapOf("contentType" to "VIDEO", "mediaId" to mediaId),
+                mapOf(
+                    "title" to "Lecture",
+                    "resourceType" to "VIDEO",
+                    "sourceType" to "FILE",
+                    "mediaId" to mediaId,
+                ),
             )
         }.andExpect { status { isOk() } }
 
@@ -144,7 +149,7 @@ class TranscodeApiTest(
     }
 
     private fun runJobFor(mediaId: String, itemId: String) {
-        val job = jobs.findByMediaIdAndLessonId(UUID.fromString(mediaId), UUID.fromString(itemId)).orElseThrow()
+        val job = jobs.findByMediaId(UUID.fromString(mediaId)).orElseThrow()
         worker.process(requireNotNull(job.id).toString())
     }
 
@@ -156,7 +161,7 @@ class TranscodeApiTest(
 
         // Queued on lesson attachment, not on upload: media has no idea whether
         // a file is a lesson video or a submission attachment.
-        val job = jobs.findByMediaIdAndLessonId(UUID.fromString(mediaId), UUID.fromString(itemId))
+        val job = jobs.findByMediaId(UUID.fromString(mediaId))
         assertThat(job).isPresent()
         assertThat(job.get().status).isEqualTo(TranscodeStatus.QUEUED)
     }
@@ -170,14 +175,19 @@ class TranscodeApiTest(
         mockMvc.put("/api/v1/items/$itemId/lesson") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $teacher")
-            content = objectMapper.writeValueAsString(mapOf("contentType" to "VIDEO", "mediaId" to mediaId))
+            content = objectMapper.writeValueAsString(mapOf(
+                    "title" to "Lecture",
+                    "resourceType" to "VIDEO",
+                    "sourceType" to "FILE",
+                    "mediaId" to mediaId,
+                ))
         }.andExpect { status { isOk() } }
 
-        assertThat(jobs.findByLessonId(UUID.fromString(itemId))).hasSize(1)
+        assertThat(jobs.findAll().count { it.mediaId == UUID.fromString(mediaId) }).isEqualTo(1)
     }
 
     @Test
-    fun `a finished job points the lesson at its renditions`() {
+    fun `a finished job points the file at its renditions`() {
         val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val name = "finished-${System.nanoTime()}.mp4"
@@ -186,7 +196,7 @@ class TranscodeApiTest(
         runJobFor(mediaId, itemId)
 
         assertThat(pipeline.calls).contains(name)
-        val job = jobs.findByMediaIdAndLessonId(UUID.fromString(mediaId), UUID.fromString(itemId)).orElseThrow()
+        val job = jobs.findByMediaId(UUID.fromString(mediaId)).orElseThrow()
         assertThat(job.status).isEqualTo(TranscodeStatus.SUCCEEDED)
         assertThat(job.attempts).isEqualTo(1)
 
@@ -259,7 +269,7 @@ class TranscodeApiTest(
         // Rethrown so the broker retries and eventually dead-letters.
         runCatching { runJobFor(mediaId, itemId) }
 
-        val job = jobs.findByMediaIdAndLessonId(UUID.fromString(mediaId), UUID.fromString(itemId)).orElseThrow()
+        val job = jobs.findByMediaId(UUID.fromString(mediaId)).orElseThrow()
         // The failure survives the rethrow, which is why it is written in its
         // own transaction rather than the one that is about to roll back.
         assertThat(job.status).isEqualTo(TranscodeStatus.FAILED)
