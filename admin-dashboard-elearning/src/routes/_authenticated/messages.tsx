@@ -7,7 +7,7 @@ const title = "Messages";
  * Kept as a route, removed from the navigation. Nothing in the API can fill it,
  * so it says so rather than rendering an empty page that looks like a failure.
  */
-export const Route = createFileRoute("/messages")({
+export const Route = createFileRoute("/_authenticated/messages")({
   head: () => ({
     meta: [
       { title: `${title} — Lernova` },

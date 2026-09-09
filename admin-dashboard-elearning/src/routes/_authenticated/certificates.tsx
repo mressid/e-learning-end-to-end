@@ -37,7 +37,7 @@ import { toast } from "sonner";
 const title = "Certificates";
 const description = "Issued certificates and completion records.";
 
-export const Route = createFileRoute("/certificates")({
+export const Route = createFileRoute("/_authenticated/certificates")({
   head: () => ({
     meta: [
       { title: `${title} — Lernova` },

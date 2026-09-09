@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/select";
 import { parseApiError, type CourseResponse } from "@/api";
 
-export const Route = createFileRoute("/courses")({
+export const Route = createFileRoute("/_authenticated/courses")({
   head: () => ({
     meta: [
       { title: "Courses — Lernova" },

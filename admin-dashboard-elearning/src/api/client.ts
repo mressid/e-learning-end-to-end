@@ -32,6 +32,21 @@ export function getRefreshToken(): string | null {
   }
 }
 
+/**
+ * Raised whenever the stored tokens change in *this* tab.
+ *
+ * The `storage` event only fires in the tabs that did not write, so signing in,
+ * signing out or refreshing left the current tab's own session state stale —
+ * it happened to work only because navigating remounted every reader. This is
+ * the same notification for the tab that made the change.
+ */
+export const SESSION_CHANGED_EVENT = "lernova:session-changed";
+
+function announceSessionChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT));
+}
+
 export function setTokens(tokens: { accessToken: string; refreshToken?: string | null }) {
   if (typeof window === "undefined") return;
   try {
@@ -42,6 +57,7 @@ export function setTokens(tokens: { accessToken: string; refreshToken?: string |
   } catch {
     // Ignore storage errors in restricted contexts
   }
+  announceSessionChange();
 }
 
 export function clearTokens() {
@@ -52,6 +68,7 @@ export function clearTokens() {
   } catch {
     // Ignore
   }
+  announceSessionChange();
 }
 
 export const AUTH_EXPIRED_EVENT = "lernova:auth-expired";

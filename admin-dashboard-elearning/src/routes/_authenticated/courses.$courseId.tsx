@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   BookOpen,
@@ -60,7 +60,7 @@ export interface CourseWorkspaceSearch {
   section?: string | undefined;
 }
 
-export const Route = createFileRoute("/courses/$courseId")({
+export const Route = createFileRoute("/_authenticated/courses/$courseId")({
   validateSearch: (rawSearch: Record<string, unknown>): CourseWorkspaceSearch => {
     const rawTab = rawSearch["tab"];
     const tab =
@@ -282,7 +282,7 @@ function LessonContentInspector({
 
 function CourseWorkspacePage() {
   const { t } = useI18n();
-  const { courseId } = useParams({ from: "/courses/$courseId" });
+  const { courseId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate();
   const activeTab = search.tab || "overview";
@@ -491,7 +491,9 @@ function CourseWorkspacePage() {
       </div>
 
       {/* Course Context Header Card */}
-      <Card className="border-border/60 shadow-xs">
+      {
+         (activeTab === "overview")  &&
+             <Card className="border-border/60 shadow-xs">
         <CardContent className="p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="space-y-1.5">
@@ -540,6 +542,8 @@ function CourseWorkspacePage() {
         </CardContent>
       </Card>
 
+      }
+  
       {/* Active Workspace View Header (Driven by Sidebar Navigation) */}
       <div className="flex items-center justify-between border-b pb-3">
         <div>

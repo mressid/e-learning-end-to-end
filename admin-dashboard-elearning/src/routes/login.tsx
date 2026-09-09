@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import {
   GraduationCap,
@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useI18n, languages, type Lang } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
-import { useLoginMutation } from "@/hooks/queries";
+import { useAuth } from "@/hooks/queries";
+import { hasAdminSession } from "@/lib/auth";
 import { parseApiError } from "@/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,11 +32,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/login")({
-  // The root guard appends where the user was headed. Anything else in the
-  // query string is ignored rather than trusted.
+  // The `_authenticated` guard appends where the user was headed. Anything else
+  // in the query string is ignored rather than trusted.
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
     const target = search["redirect"];
     return typeof target === "string" ? { redirect: target } : {};
+  },
+  /**
+   * Client-rendered, for the same mechanical reason as `_authenticated`: the
+   * router does not re-run `beforeLoad` in the browser for a match it already
+   * server-rendered, so a guard that abstained during SSR would be dead on
+   * exactly the path that needs it — someone with a session opening /login
+   * from a bookmark or the address bar. The cost is that the form is no longer
+   * server-rendered; on a dashboard that is entirely behind a sign-in, that
+   * buys nothing worth a guard that only pretends to work.
+   */
+  ssr: false,
+  /** The mirror of the `_authenticated` guard: a session belongs on the dashboard. */
+  beforeLoad: () => {
+    if (hasAdminSession()) throw redirect({ to: "/" });
   },
   head: () => ({
     meta: [
@@ -55,7 +70,7 @@ function LoginPage() {
   const { t, lang, setLang, dir } = useI18n();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const navigate = useNavigate();
-  const loginMutation = useLoginMutation();
+  const { login, isLoggingIn } = useAuth();
   const { redirect } = Route.useSearch();
 
   const [email, setEmail] = useState("");
@@ -64,7 +79,7 @@ function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const isLoading = loginMutation.isPending;
+  const isLoading = isLoggingIn;
   const currentLang = languages.find((l) => l.code === lang) || languages[0];
 
   const handleSubmit = async (e: FormEvent) => {
@@ -76,7 +91,7 @@ function LoginPage() {
     setErrorMessage("");
 
     try {
-      await loginMutation.mutateAsync({ email, password });
+      await login({ email, password });
       // Only ever resume to somewhere in this app — an absolute URL from the
       // query string would be an open redirect.
       const target = redirect && redirect.startsWith("/") ? redirect : "/";
@@ -96,7 +111,7 @@ function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col lg:grid lg:grid-cols-12 bg-background text-foreground">
+    <main className="relative flex min-h-screen w-full flex-col bg-background text-foreground transition-colors duration-200 lg:grid lg:grid-cols-12">
       {/* Top Utility Bar: Theme and Language Controls */}
       <div
         className={`absolute top-4 z-20 flex items-center gap-2 ${
@@ -459,6 +474,6 @@ function LoginPage() {
           <span>Terms of Service · Privacy Policy</span>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

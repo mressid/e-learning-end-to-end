@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 const title = "Analytics";
 const description = "What the platform actually holds.";
 
-export const Route = createFileRoute("/analytics")({
+export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({
     meta: [
       { title: `${title} — Lernova` },

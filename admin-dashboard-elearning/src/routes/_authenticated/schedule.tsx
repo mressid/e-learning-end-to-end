@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NotBuiltPage } from "@/components/dashboard/NotBuiltPage";
 
-const title = "Help & Support";
+const title = "Schedule";
 
 /*
  * Kept as a route, removed from the navigation. Nothing in the API can fill it,
  * so it says so rather than rendering an empty page that looks like a failure.
  */
-export const Route = createFileRoute("/support")({
+export const Route = createFileRoute("/_authenticated/schedule")({
   head: () => ({
     meta: [
       { title: `${title} — Lernova` },
@@ -18,8 +18,8 @@ export const Route = createFileRoute("/support")({
   component: () => (
     <NotBuiltPage
       title={title}
-      reason="There is no ticketing or contact model in the platform."
-      wouldNeed="a support-request model, or simply a link to wherever your team already handles this. A page that pretends to submit a ticket into nothing would be worse."
+      reason="Nothing in the platform models a calendar. There is no cohort, live session or office-hours table, and no endpoint that could fill this page."
+      wouldNeed="a scheduling model in the backend first — sessions with times, a cohort they belong to, and enrolment against them. This is a feature, not a wiring job."
     />
   ),
 });
