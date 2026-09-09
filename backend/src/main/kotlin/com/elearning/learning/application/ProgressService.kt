@@ -1,8 +1,11 @@
 package com.elearning.learning.application
 
+import com.elearning.learning.domain.CompletionRule
 import com.elearning.learning.domain.LearningProgress
+import com.elearning.learning.domain.Lesson
 import com.elearning.learning.domain.ProgressStatus
 import com.elearning.learning.infrastructure.EnrollmentRepository
+import com.elearning.learning.infrastructure.LessonRepository
 import com.elearning.learning.infrastructure.LearningProgressRepository
 import com.elearning.shared.errors.BusinessRuleException
 import com.elearning.shared.errors.NotFoundException
@@ -21,6 +24,7 @@ import java.util.UUID
 @Service
 class ProgressService(
     private val progress: LearningProgressRepository,
+    private val lessons: LessonRepository,
     private val enrollments: EnrollmentRepository,
     private val enrollmentService: EnrollmentService,
     private val catalog: CourseCatalog,
@@ -52,7 +56,10 @@ class ProgressService(
                 )
             }
 
-        record.record(command.status, command.progressPercent, command.lastPositionSeconds)
+        // What the lesson's own rule says they have reached, which is not
+        // always what they claim to have reached.
+        val status = effectiveStatus(lessons.findById(itemId).orElse(null), command, record)
+        record.record(status, command.progressPercent, command.lastPositionSeconds)
         enrollment.markStarted()
 
         // Finishing the last required item finishes the course.
@@ -73,6 +80,42 @@ class ProgressService(
             )
         }
         return record
+    }
+
+    /**
+     * The status a lesson's completion rule allows, given what was reported.
+     *
+     * Only a lesson carries a rule. A quiz completes by being passed and an
+     * assignment by being graded, both of which arrive here already decided,
+     * so an item with no lesson row is taken at its word.
+     *
+     * The rule was stored and read by nothing until now: whatever a client
+     * called itself, it was believed. An author who chose "reaching the end of
+     * the video" got a lesson a student could finish by opening it.
+     */
+    private fun effectiveStatus(
+        lesson: Lesson?,
+        command: RecordProgressCommand,
+        record: LearningProgress,
+    ): ProgressStatus {
+        if (lesson == null || command.status == ProgressStatus.NOT_STARTED) return command.status
+
+        return when (lesson.completionRule) {
+            CompletionRule.MANUAL -> command.status
+
+            // Reaching it at all is the requirement, so reporting anything
+            // finishes it - including the first "I have started this".
+            CompletionRule.VIEW -> ProgressStatus.COMPLETED
+
+            CompletionRule.DURATION -> {
+                val runtime = lesson.durationSeconds
+                val reached = command.lastPositionSeconds ?: record.lastPositionSeconds ?: 0
+                // A lesson whose author stated no runtime has no bar to clear.
+                // Holding it permanently incomplete would be a worse answer
+                // than trusting the student.
+                if (runtime == null || reached >= runtime) command.status else ProgressStatus.IN_PROGRESS
+            }
+        }
     }
 
     /**

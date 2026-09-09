@@ -9165,7 +9165,6 @@
             "enum": [
               "MANUAL",
               "VIEW",
-              "PERCENTAGE",
               "DURATION"
             ]
           },

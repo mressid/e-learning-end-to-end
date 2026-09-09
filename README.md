@@ -41,7 +41,7 @@ The modules are `identity`, `courses`, `learning`, `assessment`, `community`,
 modules must talk it is through an interface the consumer declares.
 
 - **Java 17**, Kotlin, Spring Boot, Spring Security (JWT resource server)
-- **PostgreSQL** with Flyway — 12 migrations, and the schema is built by them in
+- **PostgreSQL** with Flyway — 14 migrations, and the schema is built by them in
   tests too, so every run exercises them
 - **Redis**, **RabbitMQ** for asynchronous work, **S3-compatible** object storage
   for media (MinIO locally)

@@ -3348,7 +3348,7 @@ export interface components {
          */
         SaveLessonRequest: {
             /** @enum {string|null} */
-            completionRule?: "MANUAL" | "VIEW" | "PERCENTAGE" | "DURATION" | null;
+            completionRule?: "MANUAL" | "VIEW" | "DURATION" | null;
             /** @description The body, for an INLINE lesson */
             content?: string | null;
             /**

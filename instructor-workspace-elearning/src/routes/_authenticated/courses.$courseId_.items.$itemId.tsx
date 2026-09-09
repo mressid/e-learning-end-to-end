@@ -102,18 +102,14 @@ function acceptFor(resourceType: ResourceType): string | undefined {
   return undefined;
 }
 
-const COMPLETION_RULES: LessonCompletionRule[] = ["MANUAL", "VIEW", "DURATION", "PERCENTAGE"];
+const COMPLETION_RULES: LessonCompletionRule[] = ["MANUAL", "VIEW", "DURATION"];
 
 const COMPLETION: Record<string, { label: string; hint: string }> = {
   MANUAL: { label: "The student marks it done", hint: "They decide when they have finished." },
-  VIEW: { label: "Opening it is enough", hint: "Counted as done as soon as it is opened." },
+  VIEW: { label: "Opening it is enough", hint: "Counted as done the moment it is opened." },
   DURATION: {
-    label: "After its stated duration",
-    hint: "Counted once they have spent the duration above on it.",
-  },
-  PERCENTAGE: {
-    label: "After a share of it",
-    hint: "Counted once they are a set way through — for video, mostly.",
+    label: "Reaching the end",
+    hint: "Claiming to have finished before the duration above is recorded as still in progress.",
   },
 };
 
@@ -563,11 +559,11 @@ function LessonEditor({
                   ))}
                 </SelectContent>
               </Select>
-              {/* Honest about where this stands: the field is stored and read
-                  back, but nothing in the platform acts on it yet. */}
               <p className="text-xs text-muted-foreground">
-                {COMPLETION[completionRule]?.hint} Recorded on the lesson, though nothing enforces
-                it yet.
+                {COMPLETION[completionRule]?.hint}
+                {completionRule === "DURATION" && !durationSeconds
+                  ? " With no duration set there is nothing to reach, so the student is taken at their word."
+                  : ""}
               </p>
             </div>
           </div>

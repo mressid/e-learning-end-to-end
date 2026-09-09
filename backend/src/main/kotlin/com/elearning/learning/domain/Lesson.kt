@@ -8,8 +8,23 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.util.UUID
 
-/** Mirrors `lessons.completion_rule`. */
-enum class CompletionRule { MANUAL, VIEW, PERCENTAGE, DURATION }
+/**
+ * What a student has to do for a lesson to count as done.
+ *
+ * Applied by `ProgressService`, not merely recorded. There was a fourth,
+ * PERCENTAGE, meaning "a set share of the way through" — with nowhere to say
+ * what share. It was dropped rather than given a threshold nobody chose.
+ */
+enum class CompletionRule {
+    /** The student says so. */
+    MANUAL,
+
+    /** Opening it is the whole of the requirement. */
+    VIEW,
+
+    /** Reaching the end of the runtime the lesson states. */
+    DURATION,
+}
 
 /**
  * The lesson behind a LESSON-type course item.

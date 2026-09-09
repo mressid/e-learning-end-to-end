@@ -11,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import tools.jackson.databind.ObjectMapper
 
 /**
@@ -95,12 +96,74 @@ class LearningApiTest(
         return Fixture(teacher, courseId, items)
     }
 
+    private fun enroll(token: String, courseId: String) =
+        mockMvc.post("/api/v1/courses/$courseId/enroll") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isCreated() } }
+
+    /** Gives an item a lesson with a completion rule to enforce. */
+    private fun saveLesson(teacher: String, itemId: String, json: String) =
+        mockMvc.put("/api/v1/items/$itemId/lesson") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $teacher")
+            content = json
+        }.andExpect { status { isOk() } }
+
     private fun recordProgress(token: String, itemId: String, json: String) =
         mockMvc.post("/api/v1/items/$itemId/progress") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $token")
             content = json
         }
+
+    /**
+     * The rule used to be stored and read by nothing, so an author who asked
+     * for "reaching the end of the video" got a lesson a student finished by
+     * opening it.
+     */
+    @Test
+    fun `a lesson that counts as done on reaching its end refuses to finish early`() {
+        val fixture = publishedCourse(required = 1)
+        val itemId = fixture.items[0]
+        saveLesson(
+            fixture.teacher,
+            itemId,
+            """{"title":"Lecture","resourceType":"DOCUMENT","sourceType":"INLINE","content":"body",
+                "durationSeconds":600,"completionRule":"DURATION"}""",
+        )
+        val student = tokenFor("student")
+        enroll(student, fixture.courseId)
+
+        recordProgress(student, itemId, """{"status":"COMPLETED","lastPositionSeconds":100}""")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("IN_PROGRESS") }
+            }
+
+        recordProgress(student, itemId, """{"status":"COMPLETED","lastPositionSeconds":600}""")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("COMPLETED") }
+            }
+    }
+
+    @Test
+    fun `a lesson that counts as done on being opened needs nothing else`() {
+        val fixture = publishedCourse(required = 1)
+        val itemId = fixture.items[0]
+        saveLesson(
+            fixture.teacher,
+            itemId,
+            """{"title":"Notice","resourceType":"DOCUMENT","sourceType":"INLINE","content":"read me",
+                "completionRule":"VIEW"}""",
+        )
+        val student = tokenFor("student")
+        enroll(student, fixture.courseId)
+
+        recordProgress(student, itemId, """{"status":"IN_PROGRESS"}""").andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("COMPLETED") }
+        }
+    }
 
     @Test
     fun `cannot enrol in an unpublished course`() {
