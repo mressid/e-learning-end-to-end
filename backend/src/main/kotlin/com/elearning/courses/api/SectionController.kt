@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -52,6 +53,25 @@ class SectionController(
     ): List<CourseItemResponse> =
         structureService.reorderItems(sectionId, request.orderedIds, currentUser.requireId())
             .map(CourseItemResponse::of)
+
+    @PatchMapping("/{sectionId}")
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
+    @Operation(
+        summary = "Rename a section, or rewrite its description",
+        description = "Only the fields you send change. Use the reorder endpoint to move it: " +
+            "position is a property of the whole sequence, not of one section.",
+    )
+    fun updateSection(
+        @PathVariable sectionId: UUID,
+        @Valid @RequestBody request: UpdateSectionRequest,
+    ): SectionResponse = SectionResponse.of(
+        structureService.updateSection(
+            sectionId,
+            request.title,
+            request.description,
+            currentUser.requireId(),
+        ),
+    )
 
     @DeleteMapping("/{sectionId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

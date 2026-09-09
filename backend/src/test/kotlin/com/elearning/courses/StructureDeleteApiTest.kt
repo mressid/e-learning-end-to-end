@@ -1,6 +1,7 @@
 package com.elearning.courses
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -10,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import tools.jackson.databind.ObjectMapper
@@ -28,6 +30,7 @@ import tools.jackson.databind.ObjectMapper
 class StructureDeleteApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -43,6 +46,23 @@ class StructureDeleteApiTest(
             content = """{"email":"$unique@example.com","password":"$password"}"""
         }.andReturn().response.contentAsString
         return objectMapper.readTree(body).get("accessToken").asString()
+    }
+
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
     }
 
     private fun course(token: String): Pair<String, String> {
@@ -78,9 +98,108 @@ class StructureDeleteApiTest(
         }.andExpect { status { isCreated() } }
     }
 
+    // ---- reading and renaming ---------------------------------------------
+
+    @Test
+    fun `a section is renamed, and only the fields sent change`() {
+        val token = instructorTokenFor("owner")
+        val (_, sectionId) = course(token)
+
+        mockMvc.patch("/api/v1/sections/$sectionId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $token")
+            content = """{"description":"Now with a description"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.description") { value("Now with a description") }
+            // Not sent, so untouched.
+            jsonPath("$.title") { value("Section") }
+        }
+
+        mockMvc.patch("/api/v1/sections/$sectionId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $token")
+            content = """{"title":"Renamed"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.title") { value("Renamed") }
+            jsonPath("$.description") { value("Now with a description") }
+        }
+    }
+
+    @Test
+    fun `an item can be fetched by its own id`() {
+        // A page addressed by item id has nothing but the id on a cold refresh.
+        val token = instructorTokenFor("owner")
+        val (_, sectionId) = course(token)
+        val itemId = item(token, sectionId, "Readable")
+
+        mockMvc.get("/api/v1/items/$itemId") {
+            header("Authorization", "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(itemId) }
+            jsonPath("$.title") { value("Readable") }
+            jsonPath("$.type") { value("LESSON") }
+        }
+    }
+
+    @Test
+    fun `an item of a draft course is not readable by a stranger`() {
+        val owner = instructorTokenFor("owner")
+        val stranger = instructorTokenFor("owner")
+        val (_, sectionId) = course(owner)
+        val itemId = item(owner, sectionId)
+
+        // The course is a draft, so a stranger cannot see it — and therefore
+        // cannot see what is inside it.
+        mockMvc.get("/api/v1/items/$itemId") {
+            header("Authorization", "Bearer $stranger")
+        }.andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `an item is renamed and can be made optional`() {
+        val token = instructorTokenFor("owner")
+        val (_, sectionId) = course(token)
+        val itemId = item(token, sectionId)
+
+        mockMvc.patch("/api/v1/items/$itemId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $token")
+            content = """{"title":"Renamed lesson","isRequired":false}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.title") { value("Renamed lesson") }
+            jsonPath("$.isRequired") { value(false) }
+            // Fixed at creation; sending it changes nothing.
+            jsonPath("$.type") { value("LESSON") }
+        }
+    }
+
+    @Test
+    fun `a stranger cannot rename someone else's structure`() {
+        val owner = instructorTokenFor("owner")
+        val stranger = instructorTokenFor("owner")
+        val (_, sectionId) = course(owner)
+        val itemId = item(owner, sectionId)
+
+        mockMvc.patch("/api/v1/sections/$sectionId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $stranger")
+            content = """{"title":"Mine now"}"""
+        }.andExpect { status { isForbidden() } }
+
+        mockMvc.patch("/api/v1/items/$itemId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $stranger")
+            content = """{"title":"Mine now"}"""
+        }.andExpect { status { isForbidden() } }
+    }
+
     @Test
     fun `an untouched item is deleted`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (_, sectionId) = course(owner)
         val itemId = item(owner, sectionId)
 
@@ -96,7 +215,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `deleting an item a student has worked on is refused`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, sectionId) = course(owner)
         val itemId = item(owner, sectionId)
@@ -125,7 +244,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `a section is deleted with its items`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (courseId, sectionId) = course(owner)
         item(owner, sectionId, "One")
         item(owner, sectionId, "Two")
@@ -142,7 +261,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `one worked-on item blocks the whole section, leaving nothing half-deleted`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, sectionId) = course(owner)
         val untouched = item(owner, sectionId, "Untouched")
@@ -173,7 +292,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `an attempted quiz blocks deletion just as progress does`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, sectionId) = course(owner)
         val quizItemBody = mockMvc.post("/api/v1/sections/$sectionId/items") {
@@ -211,7 +330,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `a stranger cannot delete someone else's structure`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val (_, sectionId) = course(owner)
         val itemId = item(owner, sectionId)
@@ -226,7 +345,7 @@ class StructureDeleteApiTest(
 
     @Test
     fun `deleting something that is not there is a 404`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         mockMvc.delete("/api/v1/items/00000000-0000-0000-0000-000000000000") {
             header("Authorization", "Bearer $owner")
         }.andExpect { status { isNotFound() } }

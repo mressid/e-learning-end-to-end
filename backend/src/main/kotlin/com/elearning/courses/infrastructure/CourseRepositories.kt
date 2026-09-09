@@ -88,6 +88,26 @@ interface CourseRepository : JpaRepository<Course, UUID> {
 
     fun findByOwnerId(ownerId: UUID, pageable: Pageable): Page<Course>
 
+    /**
+     * Everything one instructor is responsible for, at any status.
+     *
+     * Owned *or* co-instructed, because both confer authority over the course
+     * (AGENTS.md §11) and an instructor opening their own workspace expects to
+     * see the courses they can actually edit — not just the ones they started.
+     *
+     * Unlike the public listing this ignores status: drafts are the whole point
+     * of the page, since a course nobody has published yet is exactly the one
+     * its author still has work to do on.
+     */
+    @Query(
+        """
+        select c from Course c
+        where c.ownerId = :userId
+           or c.id in (select ci.id.courseId from CourseInstructor ci where ci.id.instructorId = :userId)
+        """,
+    )
+    fun findMine(@Param("userId") userId: UUID, pageable: Pageable): Page<Course>
+
     fun countByStatus(status: CourseStatus): Long
 
     @Query("select count(c) from Course c where c.ownerId = :ownerId and c.status = :status")

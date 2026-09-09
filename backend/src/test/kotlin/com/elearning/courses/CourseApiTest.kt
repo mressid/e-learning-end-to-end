@@ -1,6 +1,7 @@
 package com.elearning.courses
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -25,6 +26,7 @@ import tools.jackson.databind.ObjectMapper
 class CourseApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -41,6 +43,23 @@ class CourseApiTest(
             content = """{"email":"$unique@example.com","password":"$password"}"""
         }.andReturn().response.contentAsString
         return objectMapper.readTree(body).get("accessToken").asString()
+    }
+
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
     }
 
     private fun createCourse(token: String, title: String = "Test Course ${System.nanoTime()}"): String {
@@ -68,8 +87,78 @@ class CourseApiTest(
     }
 
     @Test
+    fun `mine lists your own drafts, which the public listing never shows`() {
+        val owner = instructorTokenFor("owner")
+        val courseId = createCourse(owner)
+
+        val body = mockMvc.get("/api/v1/courses/mine") {
+            header("Authorization", "Bearer $owner")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+
+        val content = objectMapper.readTree(body).get("content")
+        val ids = (0 until content.size()).map { content.get(it).get("id").asString() }
+        assertThat(ids).contains(courseId)
+
+        // The whole reason this endpoint exists: a draft is invisible to the
+        // public listing, and the admin listing needs an administrator.
+        val published = mockMvc.get("/api/v1/courses") {
+            param("size", "100")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val publicContent = objectMapper.readTree(published).get("content")
+        val publicIds = (0 until publicContent.size()).map { publicContent.get(it).get("id").asString() }
+        assertThat(publicIds).doesNotContain(courseId)
+    }
+
+    @Test
+    fun `mine does not list somebody else's courses`() {
+        val owner = instructorTokenFor("owner")
+        val stranger = instructorTokenFor("owner")
+        val courseId = createCourse(owner)
+
+        val body = mockMvc.get("/api/v1/courses/mine") {
+            header("Authorization", "Bearer $stranger")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+
+        val content = objectMapper.readTree(body).get("content")
+        val ids = (0 until content.size()).map { content.get(it).get("id").asString() }
+        assertThat(ids).doesNotContain(courseId)
+    }
+
+    @Test
+    fun `mine includes a course you co-instruct but do not own`() {
+        // Co-instructorship confers authority over the course, so the workspace
+        // has to show it — otherwise you can edit a course you cannot find.
+        val owner = instructorTokenFor("owner")
+        val assistantToken = instructorTokenFor("owner")
+        val assistantId = objectMapper.readTree(
+            mockMvc.get("/api/v1/me") {
+                header("Authorization", "Bearer $assistantToken")
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ).get("id").asString()
+        val courseId = createCourse(owner)
+
+        mockMvc.post("/api/v1/courses/$courseId/instructors") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $owner")
+            content = """{"instructorId":"$assistantId","role":"ASSISTANT"}"""
+        }.andExpect { status { isCreated() } }
+
+        val body = mockMvc.get("/api/v1/courses/mine") {
+            header("Authorization", "Bearer $assistantToken")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val content = objectMapper.readTree(body).get("content")
+        val ids = (0 until content.size()).map { content.get(it).get("id").asString() }
+        assertThat(ids).contains(courseId)
+    }
+
+    @Test
+    fun `mine needs a signed-in caller`() {
+        mockMvc.get("/api/v1/courses/mine").andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
     fun `creates a course as a draft owned by the caller`() {
-        val token = tokenFor("owner")
+        val token = instructorTokenFor("owner")
         mockMvc.post("/api/v1/courses") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $token")
@@ -92,7 +181,7 @@ class CourseApiTest(
 
     @Test
     fun `a draft is hidden from other users as a 404, not a 403`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
 
@@ -111,7 +200,7 @@ class CourseApiTest(
 
     @Test
     fun `a stranger cannot modify someone else's course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
 
@@ -128,7 +217,7 @@ class CourseApiTest(
 
     @Test
     fun `an empty course cannot be published`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
 
         mockMvc.post("/api/v1/courses/$courseId/publish") {
@@ -141,7 +230,7 @@ class CourseApiTest(
 
     @Test
     fun `publishing makes a course anonymously visible`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         addItem(owner, courseId)
 
@@ -158,7 +247,7 @@ class CourseApiTest(
 
     @Test
     fun `sections and items keep one ordered sequence`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
 
         val sectionBody = mockMvc.post("/api/v1/courses/$courseId/sections") {
@@ -194,7 +283,7 @@ class CourseApiTest(
 
     @Test
     fun `full-text search finds a course by a word in its description`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val marker = "quokka${System.nanoTime()}"
         val body = mockMvc.post("/api/v1/courses") {
             contentType = MediaType.APPLICATION_JSON
@@ -222,7 +311,7 @@ class CourseApiTest(
 
     @Test
     fun `unpublished courses never appear in the public listing`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         createCourse(owner, "Hidden Draft ${System.nanoTime()}")
 
         val body = mockMvc.get("/api/v1/courses?size=100")
@@ -271,7 +360,7 @@ class CourseApiTest(
 
     @Test
     fun `a public upload becomes a stable thumbnail url`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val mediaId = uploadPublic(owner)
 
@@ -291,7 +380,7 @@ class CourseApiTest(
 
     @Test
     fun `a private upload cannot be used as a thumbnail`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         // Default visibility is PRIVATE, so its URL would expire.
         val ticket = mockMvc.post("/api/v1/media/uploads") {
@@ -325,7 +414,7 @@ class CourseApiTest(
 
     @Test
     fun `sections can be reordered`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val ids = listOf("A", "B", "C").map { title ->
             val body = mockMvc.post("/api/v1/courses/$courseId/sections") {
@@ -358,7 +447,7 @@ class CourseApiTest(
 
     @Test
     fun `a partial or duplicated order is rejected`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val ids = listOf("A", "B").map { title ->
             val body = mockMvc.post("/api/v1/courses/$courseId/sections") {
@@ -391,7 +480,7 @@ class CourseApiTest(
 
     @Test
     fun `a stranger cannot reorder someone else's course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
         mockMvc.put("/api/v1/courses/$courseId/sections/order") {
@@ -413,7 +502,7 @@ class CourseApiTest(
 
     @Test
     fun `archiving retires a published course and drops it out of discovery`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val title = "Retired Course ${System.nanoTime()}"
         val courseId = createCourse(owner, title)
         addItem(owner, courseId)
@@ -437,7 +526,7 @@ class CourseApiTest(
 
     @Test
     fun `an archived course is invisible to strangers but still reachable by its owner`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
         addItem(owner, courseId)
@@ -464,7 +553,7 @@ class CourseApiTest(
 
     @Test
     fun `an archived course cannot be published directly, only after a return to draft`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         addItem(owner, courseId)
         mockMvc.post("/api/v1/courses/$courseId/archive") {
@@ -496,7 +585,7 @@ class CourseApiTest(
 
     @Test
     fun `a stranger cannot archive someone else's course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
         mockMvc.post("/api/v1/courses/$courseId/archive") {

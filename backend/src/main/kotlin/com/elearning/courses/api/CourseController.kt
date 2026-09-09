@@ -86,6 +86,43 @@ class CourseController(
         }
     }
 
+    /*
+     * Declared before `/{id}`, and matched before it regardless: Spring prefers
+     * a literal segment to a template, so "mine" never reaches the UUID parser.
+     */
+    @GetMapping("/mine")
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
+    @Operation(
+        summary = "List the courses you teach",
+        description = "Everything you own or co-instruct, at any status. Unlike the public " +
+            "listing this includes drafts, which is the point: an unfinished course is the " +
+            "one its author still has work to do on. Authority here is the relationship, " +
+            "not a permission - you are shown the courses your own id answers for.",
+    )
+    fun mine(
+        @RequestParam(defaultValue = "0") @Min(0) page: Int,
+        @Parameter(description = "Max 100") @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
+    ): PageResponse<CourseResponse> {
+        val results = courseService.listMine(
+            currentUser.requireId(),
+            PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")),
+        )
+        // Batched for the page, like the public listing: per-row lookups here
+        // would be the same N+1 on a page an instructor opens constantly.
+        val thumbnails = mediaService.publicUrlsFor(results.content.mapNotNull { it.thumbnailMediaId })
+        val ids = results.content.mapNotNull { it.id }
+        val categories = taxonomyService.categoriesFor(ids)
+        val tags = taxonomyService.tagsFor(ids)
+        return PageResponse.from(results) {
+            CourseResponse.of(
+                it,
+                thumbnails[it.thumbnailMediaId],
+                categories[it.id].orEmpty(),
+                tags[it.id].orEmpty(),
+            )
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(
         summary = "Get a course",

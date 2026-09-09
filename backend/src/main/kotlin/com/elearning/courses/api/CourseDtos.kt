@@ -113,6 +113,16 @@ data class CreateSectionRequest(
     val description: String? = null,
 )
 
+@Schema(
+    name = "UpdateSectionRequest",
+    description = "Every field optional; only what is sent changes. Position is not editable " +
+        "here - moving a section is the reorder endpoint, which sees the whole sequence.",
+)
+data class UpdateSectionRequest(
+    @field:Size(max = 255) val title: String? = null,
+    val description: String? = null,
+)
+
 @Schema(name = "SectionResponse")
 data class SectionResponse(
     val id: UUID,
@@ -135,6 +145,17 @@ data class CreateCourseItemRequest(
     @field:NotBlank @field:Size(max = 255) val title: String,
     val type: CourseItemType,
     @get:JsonProperty("isRequired") val isRequired: Boolean = true,
+)
+
+@Schema(
+    name = "UpdateCourseItemRequest",
+    description = "Every field optional; only what is sent changes. The item's type is not " +
+        "among them - a lesson and a quiz carry different rows behind them, so switching " +
+        "would orphan content the new type has nowhere to put.",
+)
+data class UpdateCourseItemRequest(
+    @field:Size(max = 255) val title: String? = null,
+    @get:JsonProperty("isRequired") val isRequired: Boolean? = null,
 )
 
 @Schema(name = "CourseItemResponse")

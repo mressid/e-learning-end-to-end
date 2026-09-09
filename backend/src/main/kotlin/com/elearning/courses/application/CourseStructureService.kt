@@ -49,6 +49,58 @@ class CourseStructureService(
         )
     }
 
+    /**
+     * Renames a section, or rewrites its description.
+     *
+     * Only what is supplied changes. Position is not editable here - moving a
+     * section is [reorderSections], which has to see the whole order to keep the
+     * sequence contiguous.
+     */
+    @Transactional
+    fun updateSection(
+        sectionId: UUID,
+        title: String?,
+        description: String?,
+        editorId: UUID,
+    ): CourseSection {
+        val section = sections.findById(sectionId)
+            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
+        val course = courses.findById(section.courseId)
+            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        authorization.requireCanEdit(course, editorId)
+
+        title?.let { section.title = it }
+        description?.let { section.description = it }
+        return section
+    }
+
+    /**
+     * Renames an item, or changes whether finishing it is required.
+     *
+     * Its type is not editable: a lesson and a quiz carry different rows behind
+     * them, so changing it would mean deciding what to do with content the new
+     * type has no place for. Delete and re-add instead.
+     */
+    @Transactional
+    fun updateItem(
+        itemId: UUID,
+        title: String?,
+        isRequired: Boolean?,
+        editorId: UUID,
+    ): CourseItem {
+        val item = items.findById(itemId)
+            .orElseThrow { NotFoundException("ITEM_NOT_FOUND", "Item not found") }
+        val section = sections.findById(item.sectionId)
+            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
+        val course = courses.findById(section.courseId)
+            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        authorization.requireCanEdit(course, editorId)
+
+        title?.let { item.title = it }
+        isRequired?.let { item.isRequired = it }
+        return item
+    }
+
     @Transactional(readOnly = true)
     fun listSections(courseId: UUID, viewerId: UUID?): List<CourseSection> {
         val course = courses.findById(courseId)
@@ -197,6 +249,27 @@ class CourseStructureService(
                     ". Archive the course instead.",
             )
         }
+    }
+
+    /**
+     * One item, by its own id.
+     *
+     * Needed because an item is addressable on its own — its lesson, quiz,
+     * assignment, progress and prerequisites all hang off `/items/{id}`, and a
+     * page opened at one of those URLs has nothing but the id to work from.
+     * Without this, rendering the item's own title meant fetching every section
+     * of the course and searching them.
+     */
+    @Transactional(readOnly = true)
+    fun getItem(itemId: UUID, viewerId: UUID?): CourseItem {
+        val item = items.findById(itemId)
+            .orElseThrow { NotFoundException("ITEM_NOT_FOUND", "Item not found") }
+        val section = sections.findById(item.sectionId)
+            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
+        val course = courses.findById(section.courseId)
+            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        authorization.requireCanView(course, viewerId)
+        return item
     }
 
     @Transactional(readOnly = true)
