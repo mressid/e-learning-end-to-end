@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import { ArrowLeft, Download, FileUp, Save } from "lucide-react";
+import { ArrowLeft, Download, FileUp, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { useItemQuery, useLessonQuery, useSaveLessonMutation } from "@/hooks/queries";
@@ -10,6 +10,7 @@ import {
   parseApiError,
   type LessonCompletionRule,
   type LessonContentType,
+  type LessonResponse,
   type SaveLessonRequest,
 } from "@/api";
 import { MarkdownEditor } from "@/components/workspace/MarkdownEditor";
@@ -81,6 +82,16 @@ const COMPLETION: Record<string, { label: string; hint: string }> = {
 const WORDS_PER_MINUTE = 200;
 
 /**
+ * What a lesson body may be loaded from, and how much of it.
+ *
+ * The extensions are a hint to the file picker, not a rule — the browser lets
+ * anyone pick anything, so the handler checks what it actually read. Two
+ * megabytes of prose is about a novel; past that it is not a lesson.
+ */
+const MARKDOWN_ACCEPT = ".md,.markdown,.mdx,.txt,text/markdown,text/plain";
+const MAX_MARKDOWN_BYTES = 2 * 1024 * 1024;
+
+/**
  * Writing one lesson, with the whole page to do it in.
  *
  * This was a sheet over the curriculum, which meant the editor competed for
@@ -106,59 +117,137 @@ function LessonPage() {
 
   const item = useItemQuery(courseId, itemId);
   const lesson = useLessonQuery(courseId, itemId);
+
+  /*
+   * Both queries settle before the editor exists.
+   *
+   * The editor reads its text once, when it mounts. Rendering it while the
+   * lesson was still arriving mounted it on an empty body, and the text that
+   * turned up a moment later went into React state that the editor was no
+   * longer listening to — so a lesson with content came up blank, and moving
+   * between two lessons showed the previous one's writing.
+   */
+  if (item.isLoading || lesson.isLoading) {
+    return (
+      <div className="space-y-4 p-4 sm:p-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-[60vh] w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (item.isError || !item.data) {
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="card-surface p-8 text-center">
+          <h2 className="text-lg font-bold tracking-tight">Item not found</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {parseApiError(item.error).message ||
+              "It may have been deleted, or it may not be yours."}
+          </p>
+          <Button variant="outline" size="sm" className="mt-3" asChild>
+            <Link to="/courses/$courseId" params={{ courseId }} search={{ tab: "curriculum" }}>
+              Back to the curriculum
+            </Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Only lessons have a body. A quiz or an assignment has its own editor,
+  // which does not exist yet — say so rather than showing a lesson form that
+  // would save the wrong thing.
+  if (item.data.type !== "LESSON") {
+    return (
+      <div className="space-y-6 p-4 sm:p-6">
+        <BackLink courseId={courseId} />
+        <div className="card-surface p-8 text-center">
+          <h2 className="text-lg font-bold tracking-tight">{item.data.title}</h2>
+          <Badge variant="outline" className="mt-2 text-[10px] uppercase tracking-wider">
+            {item.data.type}
+          </Badge>
+          <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
+            {item.data.type === "QUIZ"
+              ? "Quiz authoring is not built yet — questions and options have endpoints, but no screen."
+              : "Assignment authoring is not built yet — the endpoints exist, but no screen does."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <LessonEditor
+      // A different lesson is a different editor, not the same one told to
+      // forget: every field below is seeded from the lesson it was mounted
+      // with, and a key is the honest way to say so.
+      key={itemId}
+      courseId={courseId}
+      itemId={itemId}
+      title={item.data.title ?? "Lesson"}
+      lesson={lesson.data ?? null}
+    />
+  );
+}
+
+/**
+ * The lesson itself, mounted once the lesson it edits is known.
+ *
+ * `lesson` is null for an item nobody has written yet, which is the ordinary
+ * state of a course being built rather than a failure. It stays live after
+ * that: it is what the page compares against to know whether anything here is
+ * unsaved.
+ */
+function LessonEditor({
+  courseId,
+  itemId,
+  title,
+  lesson,
+}: {
+  courseId: string;
+  itemId: string;
+  title: string;
+  lesson: LessonResponse | null;
+}) {
   const save = useSaveLessonMutation(courseId);
 
-  const [contentType, setContentType] = useState<LessonContentType>("ARTICLE");
-  const [description, setDescription] = useState("");
+  const [contentType, setContentType] = useState<LessonContentType>(
+    (lesson?.contentType as LessonContentType | undefined) ?? "ARTICLE",
+  );
+  const [description, setDescription] = useState(lesson?.description ?? "");
   // The rich editor is not an <input>, so the body is held here rather than
   // read off the form. Everything else is here too, because knowing whether
   // there is anything unsaved means knowing every current value.
-  const [body, setBody] = useState("");
-  const [minutes, setMinutes] = useState("");
-  const [seconds, setSeconds] = useState("");
-  const [completionRule, setCompletionRule] = useState<LessonCompletionRule>("MANUAL");
+  const [body, setBody] = useState(lesson?.content ?? "");
+  const [minutes, setMinutes] = useState(
+    lesson?.durationSeconds ? String(Math.floor(lesson.durationSeconds / 60)) : "",
+  );
+  const [seconds, setSeconds] = useState(
+    lesson?.durationSeconds ? String(lesson.durationSeconds % 60) : "",
+  );
+  const [completionRule, setCompletionRule] = useState<LessonCompletionRule>(
+    (lesson?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
+  );
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState("");
   const [error, setError] = useState("");
 
+  // Bumped to re-seed the editor from `body` — it reads its text at mount and
+  // never again, so replacing what is in it means giving it a new identity.
+  const [bodySeed, setBodySeed] = useState(0);
+  const markdownInput = useRef<HTMLInputElement | null>(null);
+
   const saved = {
-    contentType: (lesson.data?.contentType as LessonContentType | undefined) ?? "ARTICLE",
-    description: lesson.data?.description ?? "",
-    content: lesson.data?.content ?? "",
-    durationSeconds: lesson.data?.durationSeconds ?? null,
-    completionRule: (lesson.data?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
+    contentType: (lesson?.contentType as LessonContentType | undefined) ?? "ARTICLE",
+    description: lesson?.description ?? "",
+    content: lesson?.content ?? "",
+    durationSeconds: lesson?.durationSeconds ?? null,
+    completionRule: (lesson?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
   };
 
-  /**
-   * Seeded once per lesson, not on every change of the query's data.
-   *
-   * Re-seeding whenever the cached lesson changed meant a background refetch —
-   * which React Query does on window focus — could overwrite half-written text
-   * with the last saved version. It is seeded when the item changes, and after
-   * that the page is the authority until it saves.
-   */
-  const seededFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (lesson.isLoading) return;
-    if (seededFor.current === itemId) return;
-    seededFor.current = itemId;
-
-    const data = lesson.data;
-    setContentType((data?.contentType as LessonContentType | undefined) ?? "ARTICLE");
-    setDescription(data?.description ?? "");
-    setBody(data?.content ?? "");
-    const duration = data?.durationSeconds ?? null;
-    setMinutes(duration ? String(Math.floor(duration / 60)) : "");
-    setSeconds(duration ? String(duration % 60) : "");
-    setCompletionRule((data?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL");
-    setFile(null);
-    setStage("");
-    setError("");
-  }, [itemId, lesson.isLoading, lesson.data]);
-
-  const existing = lesson.data;
   const needsFile = FILE_BACKED.includes(contentType);
-  const hasFileAlready = Boolean(existing?.hasFile) && existing?.contentType === contentType;
+  const hasFileAlready = Boolean(lesson?.hasFile) && lesson?.contentType === contentType;
   const busy = save.isPending || Boolean(stage);
 
   const durationSeconds = (() => {
@@ -188,57 +277,42 @@ function LessonPage() {
     withResolver: true,
   });
 
-  if (item.isLoading) {
-    return (
-      <div className="space-y-4 p-4 sm:p-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-[60vh] w-full rounded-xl" />
-      </div>
-    );
-  }
+  /**
+   * Loading a body from a markdown file on disk.
+   *
+   * For prose written somewhere else, which is most of it — an existing README,
+   * notes kept in a repository, a draft from another editor. What is stored is
+   * markdown either way, so the file goes in as it is and the editor renders
+   * it; nothing is converted and nothing is lost.
+   */
+  const loadMarkdownFile = async (chosen: File | null) => {
+    if (!chosen) return;
 
-  if (item.isError || !item.data) {
-    return (
-      <div className="p-4 sm:p-6">
-        <div className="card-surface p-8 text-center">
-          <h2 className="text-lg font-bold tracking-tight">Item not found</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {parseApiError(item.error).message ||
-              "It may have been deleted, or it may not be yours."}
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" asChild>
-            <Link to="/courses/$courseId" params={{ courseId }} search={{ tab: "curriculum" }}>
-              Back to the curriculum
-            </Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
+    if (chosen.size > MAX_MARKDOWN_BYTES) {
+      toast.error("That file is bigger than 2 MB. It is probably not a lesson.");
+      return;
+    }
+    if (body.trim() && !window.confirm(`Replace what is written here with ${chosen.name}?`)) {
+      return;
+    }
 
-  const data = item.data;
-
-  // Only lessons have a body. A quiz or an assignment has its own editor,
-  // which does not exist yet — say so rather than showing a lesson form that
-  // would save the wrong thing.
-  if (data.type !== "LESSON") {
-    return (
-      <div className="space-y-6 p-4 sm:p-6">
-        <BackLink courseId={courseId} />
-        <div className="card-surface p-8 text-center">
-          <h2 className="text-lg font-bold tracking-tight">{data.title}</h2>
-          <Badge variant="outline" className="mt-2 text-[10px] uppercase tracking-wider">
-            {data.type}
-          </Badge>
-          <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-            {data.type === "QUIZ"
-              ? "Quiz authoring is not built yet — questions and options have endpoints, but no screen."
-              : "Assignment authoring is not built yet — the endpoints exist, but no screen does."}
-          </p>
-        </div>
-      </div>
-    );
-  }
+    try {
+      const text = await chosen.text();
+      // The picker's accept list is a suggestion the browser does not enforce,
+      // so this is where a PDF gets turned away rather than pasted in as
+      // mojibake.
+      if (text.includes("\u0000")) {
+        toast.error("That does not look like a text file.");
+        return;
+      }
+      setBody(text);
+      setBodySeed((seed) => seed + 1);
+      setError("");
+      toast.success(`Loaded ${chosen.name}. Nothing is saved until you save the lesson.`);
+    } catch {
+      toast.error("That file could not be read.");
+    }
+  };
 
   const words = body.trim() ? body.trim().split(/\s+/).length : 0;
   const readingMinutes = Math.max(1, Math.round(words / WORDS_PER_MINUTE));
@@ -310,7 +384,7 @@ function LessonPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <BackLink courseId={courseId} />
-            <h1 className="mt-1 truncate text-lg font-bold tracking-tight">{data.title}</h1>
+            <h1 className="mt-1 truncate text-lg font-bold tracking-tight">{title}</h1>
           </div>
           <div className="flex items-center gap-3">
             <span
@@ -321,11 +395,7 @@ function LessonPage() {
                   : "text-muted-foreground",
               )}
             >
-              {isDirty
-                ? "Unsaved changes"
-                : lesson.isError
-                  ? "Not written yet"
-                  : "Everything saved"}
+              {isDirty ? "Unsaved changes" : lesson ? "Everything saved" : "Not written yet"}
             </span>
             <Button type="submit" form={FORM_ID} size="sm" disabled={busy || !isDirty}>
               <Save className="h-4 w-4" />
@@ -434,8 +504,33 @@ function LessonPage() {
 
         {contentType === "ARTICLE" && (
           <section className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <Label>Body</Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Label>Body</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => markdownInput.current?.click()}
+                >
+                  <Upload className="h-3 w-3" />
+                  Load from a file
+                </Button>
+                <input
+                  ref={markdownInput}
+                  type="file"
+                  accept={MARKDOWN_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    const chosen = e.target.files?.[0] ?? null;
+                    // Cleared so that picking the same file twice in a row
+                    // still counts as a change.
+                    e.target.value = "";
+                    void loadMarkdownFile(chosen);
+                  }}
+                />
+              </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
                   {words.toLocaleString()} {words === 1 ? "word" : "words"}
@@ -465,13 +560,13 @@ function LessonPage() {
             <MarkdownEditor
               value={body}
               onChange={setBody}
-              seedKey={itemId}
+              seedKey={`${itemId}:${bodySeed}`}
               className="[&_.lernova-mdx-content]:min-h-[65vh]"
             />
             <p className="text-xs text-muted-foreground">
-              Type as you would in a document. What is stored is markdown, so it stays readable
-              outside this editor — the toolbar toggle switches between the rich view and the
-              source.
+              Type as you would in a document, or load a <code>.md</code> file you already have.
+              What is stored is markdown either way, so it stays readable outside this editor — the
+              toolbar toggle switches between the rich view and the source.
             </p>
           </section>
         )}

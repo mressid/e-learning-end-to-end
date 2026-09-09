@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useRef, useState } from "react";
 import type { MDXEditorMethods } from "@mdxeditor/editor";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,14 +147,20 @@ export function MarkdownEditor({
   const { resolvedTheme } = useTheme();
   const editorRef = useRef<MDXEditorMethods | null>(null);
   const [seeded, setSeeded] = useState(value);
+  const lastSeedKey = useRef(seedKey);
 
   // MDXEditor takes `markdown` as an initial value, not a controlled prop:
   // pushing every keystroke back in would fight the cursor. It is re-seeded
   // only when the caller says the subject changed.
-  useEffect(() => {
+  //
+  // Adjusted during the render rather than in an effect, which is a render too
+  // late to be any use here: `<Inner>` remounts on the new key in that same
+  // commit, so it would take the *previous* subject's text and then ignore the
+  // corrected prop, because the editor reads `markdown` once and never again.
+  if (lastSeedKey.current !== seedKey) {
+    lastSeedKey.current = seedKey;
     setSeeded(value);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedKey]);
+  }
 
   return (
     <div
