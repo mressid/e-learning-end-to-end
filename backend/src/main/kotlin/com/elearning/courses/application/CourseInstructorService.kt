@@ -38,6 +38,15 @@ class CourseInstructorService(
         if (!users.exists(instructorId)) {
             throw NotFoundException("USER_NOT_FOUND", "No such user")
         }
+        // A student account cannot co-instruct, for the same reason it cannot
+        // own: the two kinds are separate and permanent. Someone who should be
+        // teaching needs an instructor account, not an exception here.
+        if (!users.isInstructor(instructorId)) {
+            throw BusinessRuleException(
+                "NOT_AN_INSTRUCTOR",
+                "That account is a student. Only an instructor account can be added to a course.",
+            )
+        }
         // The owner's authority comes from `courses.owner_id`; duplicating it
         // here would create two sources of truth for the same person.
         if (course.ownerId == instructorId) {

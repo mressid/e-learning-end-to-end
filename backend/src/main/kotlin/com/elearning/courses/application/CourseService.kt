@@ -31,8 +31,23 @@ class CourseService(
     private val users: UserDirectory,
 ) {
 
+    /**
+     * Creates a course, owned by an instructor.
+     *
+     * Authoring used to be open to any signed-in account, and creating a course
+     * is what made you an instructor - the flag was set on the way past. That
+     * made "instructor" a description of what you had done rather than what your
+     * account is. Now only an instructor account may own a course, and a student
+     * asking for one is refused rather than quietly promoted.
+     */
     @Transactional
     fun create(command: CreateCourseCommand, ownerId: UUID): Course {
+        if (!users.isInstructor(ownerId)) {
+            throw BusinessRuleException(
+                "NOT_AN_INSTRUCTOR",
+                "Only an instructor account may own a course",
+            )
+        }
         val course = courses.save(
             Course(
                 ownerId = ownerId,
@@ -44,11 +59,6 @@ class CourseService(
                 language = command.language ?: "en",
             ).apply { accessDurationDays = command.accessDurationDays },
         )
-        // Authoring a course is what makes someone an instructor, so record it.
-        // Creation is still open to any signed-in learner; this only keeps the
-        // roster honest about who actually authors, now that the roster reads a
-        // flag rather than deriving itself from `courses.owner_id`.
-        users.markAsInstructor(ownerId)
         return course
     }
 
@@ -58,6 +68,20 @@ class CourseService(
         authorization.requireCanView(course, viewerId)
         return course
     }
+
+    /**
+     * The courses one instructor is responsible for, drafts included.
+     *
+     * The public listing is published-only and the draft listing is an admin
+     * endpoint behind `course.read`, so without this an instructor had no way to
+     * see their own unfinished work — the thing they open the workspace to do.
+     *
+     * No permission check: authority here is the relationship, not a granted
+     * code (§11). You are being shown the courses you own or co-instruct, which
+     * is a question only your own id can answer.
+     */
+    @Transactional(readOnly = true)
+    fun listMine(userId: UUID, pageable: Pageable): Page<Course> = courses.findMine(userId, pageable)
 
     @Transactional(readOnly = true)
     fun listPublished(pageable: Pageable): Page<Course> =

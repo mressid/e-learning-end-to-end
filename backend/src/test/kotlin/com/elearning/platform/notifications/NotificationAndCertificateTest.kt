@@ -1,6 +1,7 @@
 package com.elearning.platform.notifications
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import com.elearning.shared.testing.RecordingEmailConfiguration
 import com.elearning.shared.testing.RecordingEmailSender
 import org.assertj.core.api.Assertions.assertThat
@@ -34,6 +35,7 @@ class NotificationAndCertificateTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
     @Autowired val emails: RecordingEmailSender,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -57,6 +59,18 @@ class NotificationAndCertificateTest(
         return Account(objectMapper.readTree(body).get("accessToken").asString(), email)
     }
 
+    /** An instructor account - the only kind that may own the course under test. */
+    private fun instructorAccount(label: String): Account {
+        val unique = "$label-${System.nanoTime()}"
+        val email = "$unique@example.com"
+        accounts.instructor(email, unique, password)
+        val body = mockMvc.post("/api/v1/auth/login") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"email":"$email","password":"$password"}"""
+        }.andReturn().response.contentAsString
+        return Account(objectMapper.readTree(body).get("accessToken").asString(), email)
+    }
+
     private fun postJson(url: String, token: String, json: String): String =
         mockMvc.post(url) {
             contentType = MediaType.APPLICATION_JSON
@@ -71,7 +85,7 @@ class NotificationAndCertificateTest(
 
     /** A published course with exactly one required lesson. */
     private fun oneLessonCourse(): Course {
-        val teacher = account("teacher").token
+        val teacher = instructorAccount("teacher").token
         val courseId = id(postJson("/api/v1/courses", teacher, """{"title":"C ${System.nanoTime()}"}"""))
         val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
         val itemId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"L","type":"LESSON"}"""))
@@ -275,7 +289,7 @@ class NotificationAndCertificateTest(
 
     @Test
     fun `grading an assignment notifies the student`() {
-        val teacher = account("teacher").token
+        val teacher = instructorAccount("teacher").token
         val courseId = id(postJson("/api/v1/courses", teacher, """{"title":"C ${System.nanoTime()}"}"""))
         val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
         val itemId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"A","type":"ASSIGNMENT"}"""))

@@ -1,6 +1,6 @@
 package com.elearning.identity.application
 
-import com.elearning.identity.domain.User
+import com.elearning.identity.domain.Student
 import com.elearning.identity.domain.UserProfile
 import com.elearning.identity.domain.UserStatus
 import com.elearning.identity.infrastructure.UserProfileRepository
@@ -21,8 +21,15 @@ class UserRegistrationService(
     private val identityProperties: IdentityProperties,
 ) {
 
+    /**
+     * Self-registration always produces a [Student].
+     *
+     * There is no public path to an instructor account, and that is deliberate:
+     * authoring is not something you can grant yourself. An administrator
+     * creates instructors through the admin directory.
+     */
     @Transactional
-    fun register(command: RegisterUserCommand): User {
+    fun register(command: RegisterUserCommand): Student {
         // Checked explicitly so the caller gets a precise error code. The unique
         // constraints in the database remain the actual guarantee against races.
         if (users.existsByEmailIgnoreCase(command.email)) {
@@ -33,7 +40,7 @@ class UserRegistrationService(
         }
 
         val user = users.save(
-            User(
+            Student(
                 email = command.email.lowercase(),
                 username = command.username,
                 passwordHash = requireNotNull(passwordEncoder.encode(command.password)),

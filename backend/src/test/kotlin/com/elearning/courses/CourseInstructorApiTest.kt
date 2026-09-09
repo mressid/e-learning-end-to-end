@@ -1,6 +1,7 @@
 package com.elearning.courses
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -26,6 +27,7 @@ import tools.jackson.databind.ObjectMapper
 class CourseInstructorApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -48,6 +50,24 @@ class CourseInstructorApiTest(
         )
     }
 
+    /**
+     * An instructor account.
+     *
+     * Owners and co-instructors both have to be one: `courses.owner_id` and
+     * `course_instructors.instructor_id` reference the instructor table, so a
+     * student in either position is refused by the database as well as the
+     * service. [account] stays the student, for the callers that want one.
+     */
+    private fun instructorAccount(label: String): Account {
+        val unique = "$label-${System.nanoTime()}"
+        val userId = accounts.instructor("$unique@example.com", unique, password)
+        val body = mockMvc.post("/api/v1/auth/login") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"email":"$unique@example.com","password":"$password"}"""
+        }.andReturn().response.contentAsString
+        return Account(objectMapper.readTree(body).get("accessToken").asString(), userId)
+    }
+
     private fun createCourse(token: String): String {
         val body = mockMvc.post("/api/v1/courses") {
             contentType = MediaType.APPLICATION_JSON
@@ -65,9 +85,43 @@ class CourseInstructorApiTest(
         }
 
     @Test
+    fun `a student cannot be added as a co-instructor`() {
+        val owner = instructorAccount("owner")
+        val student = account("student")
+        val courseId = createCourse(owner.token)
+
+        // Rejected for what the account is, not for anything about this course:
+        // the owner is asking, so the ownership check has already passed.
+        addInstructor(courseId, owner.token, student.userId).andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("NOT_AN_INSTRUCTOR") }
+        }
+
+        mockMvc.get("/api/v1/courses/$courseId/instructors") {
+            header("Authorization", "Bearer ${owner.token}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `a student cannot create a course at all`() {
+        val student = account("student")
+        mockMvc.post("/api/v1/courses") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${student.token}")
+            content = """{"title":"Not mine to write"}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("NOT_AN_INSTRUCTOR") }
+        }
+    }
+
+    @Test
     fun `a co-instructor can edit the course, closing the gap authorization already assumed`() {
-        val owner = account("owner")
-        val assistant = account("assistant")
+        val owner = instructorAccount("owner")
+        val assistant = instructorAccount("assistant")
         val courseId = createCourse(owner.token)
 
         // Before being added, they are a stranger.
@@ -94,8 +148,8 @@ class CourseInstructorApiTest(
 
     @Test
     fun `only the owner may manage the roster`() {
-        val owner = account("owner")
-        val assistant = account("assistant")
+        val owner = instructorAccount("owner")
+        val assistant = instructorAccount("assistant")
         val outsider = account("outsider")
         val courseId = createCourse(owner.token)
         addInstructor(courseId, owner.token, assistant.userId).andExpect { status { isCreated() } }
@@ -118,7 +172,7 @@ class CourseInstructorApiTest(
 
     @Test
     fun `the owner is not added as an instructor`() {
-        val owner = account("owner")
+        val owner = instructorAccount("owner")
         val courseId = createCourse(owner.token)
         addInstructor(courseId, owner.token, owner.userId).andExpect {
             status { isUnprocessableEntity() }
@@ -128,7 +182,7 @@ class CourseInstructorApiTest(
 
     @Test
     fun `an unknown user cannot be added`() {
-        val owner = account("owner")
+        val owner = instructorAccount("owner")
         val courseId = createCourse(owner.token)
         addInstructor(courseId, owner.token, "00000000-0000-0000-0000-000000000000").andExpect {
             status { isNotFound() }
@@ -138,8 +192,8 @@ class CourseInstructorApiTest(
 
     @Test
     fun `adding twice updates the role rather than duplicating`() {
-        val owner = account("owner")
-        val assistant = account("assistant")
+        val owner = instructorAccount("owner")
+        val assistant = instructorAccount("assistant")
         val courseId = createCourse(owner.token)
         addInstructor(courseId, owner.token, assistant.userId, "ASSISTANT").andExpect { status { isCreated() } }
         addInstructor(courseId, owner.token, assistant.userId, "PRIMARY").andExpect {
@@ -154,8 +208,8 @@ class CourseInstructorApiTest(
 
     @Test
     fun `removing revokes edit access`() {
-        val owner = account("owner")
-        val assistant = account("assistant")
+        val owner = instructorAccount("owner")
+        val assistant = instructorAccount("assistant")
         val courseId = createCourse(owner.token)
         addInstructor(courseId, owner.token, assistant.userId).andExpect { status { isCreated() } }
 

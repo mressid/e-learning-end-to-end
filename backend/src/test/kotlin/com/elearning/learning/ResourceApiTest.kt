@@ -1,6 +1,7 @@
 package com.elearning.learning
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -27,6 +28,7 @@ import java.net.URI
 class ResourceApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -44,6 +46,23 @@ class ResourceApiTest(
         return objectMapper.readTree(body).get("accessToken").asString()
     }
 
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+    }
+
     private fun postJson(url: String, token: String, json: String): String =
         mockMvc.post(url) {
             contentType = MediaType.APPLICATION_JSON
@@ -57,7 +76,7 @@ class ResourceApiTest(
     private data class Course(val teacher: String, val courseId: String, val sectionId: String, val itemId: String)
 
     private fun publishedCourse(): Course {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val courseId = id(postJson("/api/v1/courses", teacher, """{"title":"C ${System.nanoTime()}"}"""))
         val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
         val itemId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"L","type":"LESSON"}"""))
@@ -105,7 +124,7 @@ class ResourceApiTest(
 
     @Test
     fun `each source type requires its own content`() {
-        val token = tokenFor("author")
+        val token = instructorTokenFor("author")
         val cases = mapOf(
             """{"title":"t","resourceType":"DOCUMENT","sourceType":"FILE"}""" to "MEDIA_REQUIRED",
             """{"title":"t","resourceType":"LINK","sourceType":"URL"}""" to "URL_REQUIRED",
@@ -125,7 +144,7 @@ class ResourceApiTest(
 
     @Test
     fun `only http and https urls are accepted`() {
-        val token = tokenFor("author")
+        val token = instructorTokenFor("author")
         // A javascript: link would be handed straight to a student's browser.
         mockMvc.post("/api/v1/resources") {
             contentType = MediaType.APPLICATION_JSON
@@ -146,7 +165,7 @@ class ResourceApiTest(
 
     @Test
     fun `a file resource copies its metadata from the upload`() {
-        val token = tokenFor("author")
+        val token = instructorTokenFor("author")
         val mediaId = uploadFile(token, "cheat sheet body")
 
         val body = postJson(
@@ -161,7 +180,7 @@ class ResourceApiTest(
 
     @Test
     fun `somebody else's upload cannot be turned into a resource`() {
-        val author = tokenFor("author")
+        val author = instructorTokenFor("author")
         val stranger = tokenFor("stranger")
         val mediaId = uploadFile(stranger, "not yours")
 

@@ -2,6 +2,7 @@ package com.elearning.platform.transcode
 
 import com.elearning.platform.transcode.application.TranscodeWorker
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -35,6 +36,7 @@ class TranscodeApiTest(
     @Autowired val jobs: TranscodeRepository,
     @Autowired val worker: TranscodeWorker,
     @Autowired val pipeline: FakeVideoPipeline,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -45,6 +47,23 @@ class TranscodeApiTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"email":"$unique@example.com","username":"$unique","password":"$password"}"""
         }.andExpect { status { isCreated() } }
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+    }
+
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
         return objectMapper.readTree(
             mockMvc.post("/api/v1/auth/login") {
                 contentType = MediaType.APPLICATION_JSON
@@ -131,7 +150,7 @@ class TranscodeApiTest(
 
     @Test
     fun `attaching a video queues exactly one job`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val (itemId, mediaId) = videoLesson(teacher, student, "lecture-${System.nanoTime()}.mp4")
 
@@ -144,7 +163,7 @@ class TranscodeApiTest(
 
     @Test
     fun `re-saving the same video does not queue the work twice`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val (itemId, mediaId) = videoLesson(teacher, student, "idempotent-${System.nanoTime()}.mp4")
 
@@ -159,7 +178,7 @@ class TranscodeApiTest(
 
     @Test
     fun `a finished job points the lesson at its renditions`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val name = "finished-${System.nanoTime()}.mp4"
         val (itemId, mediaId) = videoLesson(teacher, student, name)
@@ -180,7 +199,7 @@ class TranscodeApiTest(
 
     @Test
     fun `playback returns a manifest whose segment URLs are signed`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val (itemId, mediaId) = videoLesson(teacher, student, "playable-${System.nanoTime()}.mp4")
         runJobFor(mediaId, itemId)
@@ -199,7 +218,7 @@ class TranscodeApiTest(
 
     @Test
     fun `a stranger cannot fetch the manifest`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val stranger = tokenFor("stranger")
         val (itemId, mediaId) = videoLesson(teacher, student, "guarded-${System.nanoTime()}.mp4")
@@ -212,7 +231,7 @@ class TranscodeApiTest(
 
     @Test
     fun `playback before the encode finishes says so, and the original still works`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val (itemId, _) = videoLesson(teacher, student, "pending-${System.nanoTime()}.mp4")
 
@@ -231,7 +250,7 @@ class TranscodeApiTest(
 
     @Test
     fun `a failed encode is recorded with its reason and leaves the lesson playable`() {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val name = "broken-${System.nanoTime()}.mp4"
         pipeline.failFor(name)

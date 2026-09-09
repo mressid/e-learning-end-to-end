@@ -1,6 +1,7 @@
 package com.elearning.courses
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -24,6 +25,7 @@ import tools.jackson.databind.ObjectMapper
 class TaxonomyApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -39,6 +41,23 @@ class TaxonomyApiTest(
             content = """{"email":"$unique@example.com","password":"$password"}"""
         }.andReturn().response.contentAsString
         return objectMapper.readTree(body).get("accessToken").asString()
+    }
+
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
     }
 
     private fun createCourse(token: String): String {
@@ -89,7 +108,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `an editor sets categories and they come back on the course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val design = categoryIdBySlug("design")
         val ml = categoryIdBySlug("machine-learning")
@@ -110,7 +129,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `setting categories replaces the set rather than adding to it`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val design = categoryIdBySlug("design")
         val ml = categoryIdBySlug("machine-learning")
@@ -141,7 +160,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `an unknown category is reported, not silently dropped`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         mockMvc.put("/api/v1/courses/$courseId/categories") {
             contentType = MediaType.APPLICATION_JSON
@@ -155,7 +174,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `a stranger cannot retag someone else's course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val courseId = createCourse(owner)
         mockMvc.put("/api/v1/courses/$courseId/tags") {
@@ -167,7 +186,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `tags differing only in case or punctuation are one tag`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val unique = "Kotlin Coroutines ${System.nanoTime()}"
 
@@ -186,8 +205,8 @@ class TaxonomyApiTest(
 
     @Test
     fun `a tag created on one course is reused by the next, not duplicated`() {
-        val owner = tokenFor("owner")
-        val other = tokenFor("other")
+        val owner = instructorTokenFor("owner")
+        val other = instructorTokenFor("other")
         val name = "Shared Topic ${System.nanoTime()}"
 
         fun tag(token: String, courseId: String) = mockMvc.put("/api/v1/courses/$courseId/tags") {
@@ -203,7 +222,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `refuses an unreasonable number of tags`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val many = (1..40).map { "tag-number-$it" }
         mockMvc.put("/api/v1/courses/$courseId/tags") {
@@ -215,7 +234,7 @@ class TaxonomyApiTest(
 
     @Test
     fun `the course listing carries taxonomy for every row`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val courseId = createCourse(owner)
         val design = categoryIdBySlug("design")
         mockMvc.put("/api/v1/courses/$courseId/categories") {

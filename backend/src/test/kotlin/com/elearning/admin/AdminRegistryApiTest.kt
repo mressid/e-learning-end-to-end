@@ -1,6 +1,7 @@
 package com.elearning.admin
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -24,6 +25,7 @@ import tools.jackson.databind.ObjectMapper
 class AdminRegistryApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -83,6 +85,18 @@ class AdminRegistryApiTest(
         ).get("accessToken").asString()
     }
 
+    /** An instructor: registration makes students, and a student cannot author. */
+    private fun teacher(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+    }
+
     /** A published course whose single required item the student completes. */
     private fun completedCourse(teacher: String, student: String): String {
         val courseId = objectMapper.readTree(
@@ -124,7 +138,7 @@ class AdminRegistryApiTest(
 
     @Test
     fun `the register lists issued certificates with holder and course resolved`() {
-        val teacher = learner("teacher")
+        val teacher = teacher("teacher")
         val student = learner("student")
         val courseId = completedCourse(teacher, student)
 
@@ -143,7 +157,7 @@ class AdminRegistryApiTest(
 
     @Test
     fun `the verification code is never listed`() {
-        val teacher = learner("teacher")
+        val teacher = teacher("teacher")
         val student = learner("student")
         completedCourse(teacher, student)
 
@@ -182,7 +196,7 @@ class AdminRegistryApiTest(
 
     @Test
     fun `the queue lists submissions with their author and assignment named`() {
-        val teacher = learner("teacher")
+        val teacher = teacher("teacher")
         val student = learner("student")
         val courseId = objectMapper.readTree(
             mockMvc.post("/api/v1/courses") {

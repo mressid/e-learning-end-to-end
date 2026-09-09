@@ -1,6 +1,7 @@
 package com.elearning.courses
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -30,6 +31,7 @@ import tools.jackson.databind.ObjectMapper
 class PrerequisiteApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -45,6 +47,23 @@ class PrerequisiteApiTest(
             content = """{"email":"$unique@example.com","password":"$password"}"""
         }.andReturn().response.contentAsString
         return objectMapper.readTree(body).get("accessToken").asString()
+    }
+
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
     }
 
     /** A course with one section and one lesson item, left in draft. */
@@ -104,7 +123,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `course prerequisites are free text, read back publicly in order`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (courseId, _) = publishedCourse(owner)
 
         setCourseNotes(owner, courseId, listOf("Basic Python", "Comfortable with matrices"))
@@ -122,7 +141,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `a prerequisite never blocks enrolment`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, _) = publishedCourse(owner)
         setCourseNotes(owner, courseId, listOf("A degree in astrophysics"))
@@ -138,7 +157,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `setting replaces the whole list, so the last one can be removed`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (courseId, _) = publishedCourse(owner)
 
         setCourseNotes(owner, courseId, listOf("One", "Two")).andExpect { status { isOk() } }
@@ -157,7 +176,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `blank entries and duplicates are dropped rather than rendered`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (courseId, _) = publishedCourse(owner)
 
         // A blank would render as an empty bullet and a repeat as the same line
@@ -172,7 +191,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `a stranger cannot set prerequisites on someone else's course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val (courseId, _) = publishedCourse(owner)
         setCourseNotes(stranger, courseId, listOf("Anything")).andExpect { status { isForbidden() } }
@@ -180,7 +199,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `a draft course's prerequisites are not readable by a stranger`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val stranger = tokenFor("stranger")
         val (draft, _) = draftCourse(owner)
         // 404, not an empty list: answering at all would confirm the draft exists.
@@ -193,7 +212,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `an item's prerequisites must belong to the same course`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (_, sectionA) = draftCourse(owner)
         val (_, sectionB) = draftCourse(owner)
         val itemA = addItem(owner, sectionA, "First")
@@ -207,7 +226,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `an item loop is refused`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val (_, sectionId) = draftCourse(owner)
         val first = addItem(owner, sectionId, "First")
         val second = addItem(owner, sectionId, "Second")
@@ -221,7 +240,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `progress on a locked item is refused until its prerequisite is done`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, sectionId) = draftCourse(owner)
         val first = addItem(owner, sectionId, "First")
@@ -257,7 +276,7 @@ class PrerequisiteApiTest(
 
     @Test
     fun `clearing prerequisites unlocks the item again`() {
-        val owner = tokenFor("owner")
+        val owner = instructorTokenFor("owner")
         val student = tokenFor("student")
         val (courseId, sectionId) = draftCourse(owner)
         val first = addItem(owner, sectionId, "First")

@@ -1,6 +1,7 @@
 package com.elearning.admin
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -26,6 +27,7 @@ import tools.jackson.databind.ObjectMapper
 class AdminLibraryApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -77,6 +79,18 @@ class AdminLibraryApiTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"email":"$unique@example.com","username":"$unique","password":"$password"}"""
         }.andExpect { status { isCreated() } }
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+    }
+
+    /** An instructor: registration makes students, and a student cannot author. */
+    private fun teacher(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
         return objectMapper.readTree(
             mockMvc.post("/api/v1/auth/login") {
                 contentType = MediaType.APPLICATION_JSON
@@ -170,7 +184,7 @@ class AdminLibraryApiTest(
     fun `a category still used by a course cannot be deleted`() {
         val token = adminWith("category.manage")
         val categoryId = createCategory(token, "In Use ${System.nanoTime()}")
-        val teacher = learner("teacher")
+        val teacher = teacher("teacher")
         val courseId = objectMapper.readTree(
             mockMvc.post("/api/v1/courses") {
                 contentType = MediaType.APPLICATION_JSON

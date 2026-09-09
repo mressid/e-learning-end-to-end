@@ -3,6 +3,7 @@ package com.elearning.courses.infrastructure
 import com.elearning.courses.application.UserDirectory
 import com.elearning.courses.application.UserSummary
 import com.elearning.identity.application.UserLookupService
+import com.elearning.identity.infrastructure.InstructorRepository
 import com.elearning.identity.infrastructure.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -19,6 +20,7 @@ import java.util.UUID
 @Component
 class UserDirectoryAdapter(
     private val users: UserRepository,
+    private val instructorAccounts: InstructorRepository,
     private val lookup: UserLookupService,
 ) : UserDirectory {
 
@@ -29,19 +31,15 @@ class UserDirectoryAdapter(
             UserSummary(p.id, p.email, p.username, p.displayName)
         }
 
-    override fun markAsInstructor(userId: UUID) {
-        val user = users.findById(userId).orElse(null) ?: return
-        if (!user.isInstructor) {
-            user.isInstructor = true
-            users.save(user)
-        }
-    }
+    // Reads the `instructors` table directly: being a row in it is what being an
+    // instructor means, so there is no flag to consult and none to fall behind.
+    override fun isInstructor(userId: UUID): Boolean = instructorAccounts.existsById(userId)
 
     override fun instructors(term: String?, pageable: Pageable): Page<UserSummary> {
         val page = if (term.isNullOrBlank()) {
-            users.findByIsInstructorTrue(pageable)
+            instructorAccounts.findAll(pageable)
         } else {
-            users.searchInstructors(term.trim(), pageable)
+            instructorAccounts.search(term.trim(), pageable)
         }
         // One profile lookup for the page, not one per row.
         val profiles = lookup.summaries(page.content.mapNotNull { it.id })

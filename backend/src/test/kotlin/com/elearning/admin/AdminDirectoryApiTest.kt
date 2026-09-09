@@ -209,14 +209,19 @@ class AdminDirectoryApiTest(
     // ---- the instructor roster -------------------------------------------
 
     @Test
-    fun `authoring a course puts a learner on the roster`() {
-        val (_, teacher) = learner("teacher")
-        repeat(2) {
-            mockMvc.post("/api/v1/courses") {
-                contentType = MediaType.APPLICATION_JSON
-                header("Authorization", "Bearer $teacher")
-                content = """{"title":"Owned ${System.nanoTime()}"}"""
-            }.andExpect { status { isCreated() } }
+    fun `a student cannot author a course, and does not appear on the roster`() {
+        // Creating a course used to be open to anyone signed in, and doing it
+        // was what made you an instructor. Refusing is the whole point of the
+        // separation: authoring follows from the kind of account you hold, not
+        // the other way round.
+        val (id, learnerToken) = learner("teacher")
+        mockMvc.post("/api/v1/courses") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $learnerToken")
+            content = """{"title":"Owned ${System.nanoTime()}"}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("NOT_AN_INSTRUCTOR") }
         }
 
         val body = mockMvc.get("/api/v1/admin/instructors") {
@@ -225,19 +230,40 @@ class AdminDirectoryApiTest(
         }.andExpect { status { isOk() } }.andReturn().response.contentAsString
 
         val content = objectMapper.readTree(body).get("content")
-        val counts = (0 until content.size()).map { content.get(it).get("courseCount").asInt() }
-        assertThat(counts).isNotEmpty()
-        // Since V11 the roster reads `users.is_instructor` rather than deriving
-        // itself from `courses.owner_id`, so creating a course sets the flag.
-        // Without that the two would disagree: creation is still open to any
-        // learner, and a self-service author would own courses while being
-        // absent from the list of people who author courses.
-        //
-        // The counts are therefore no longer all positive - an instructor an
-        // administrator added has not started anything yet. That absence is the
-        // point of the change, so it is asserted in AdminInstructorApiTest
-        // rather than excluded here.
-        assertThat(counts).anyMatch { it > 0 }
+        val ids = (0 until content.size()).map { content.get(it).get("id").asString() }
+        assertThat(ids).doesNotContain(id)
+    }
+
+    @Test
+    fun `the learner directory lists students and not instructors`() {
+        val (studentId, _) = learner("directory-student")
+        val unique = "directory-teacher-${System.nanoTime()}"
+        val instructorId = objectMapper.readTree(
+            mockMvc.post("/api/v1/admin/users") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer ${superToken()}")
+                content = objectMapper.writeValueAsString(
+                    mapOf(
+                        "email" to "$unique@example.com",
+                        "username" to unique,
+                        "password" to password,
+                        "type" to "INSTRUCTOR",
+                    ),
+                )
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ).get("id").asString()
+
+        // Newest first, and both were just created, so both would be near the
+        // top of this page if the directory still listed every account.
+        val body = mockMvc.get("/api/v1/admin/users") {
+            header("Authorization", "Bearer ${superToken()}")
+            param("size", "100")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+
+        val content = objectMapper.readTree(body).get("content")
+        val ids = (0 until content.size()).map { content.get(it).get("id").asString() }
+        assertThat(ids).contains(studentId)
+        assertThat(ids).doesNotContain(instructorId)
     }
 
     @Test

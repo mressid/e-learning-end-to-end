@@ -5,7 +5,7 @@ import com.elearning.learning.domain.Enrollment
 import com.elearning.learning.domain.EnrollmentStatus
 import com.elearning.courses.domain.Course
 import com.elearning.courses.infrastructure.CourseRepository
-import com.elearning.identity.domain.User
+import com.elearning.identity.domain.Instructor
 import com.elearning.identity.domain.UserStatus
 import com.elearning.identity.infrastructure.UserRepository
 import com.elearning.learning.infrastructure.EnrollmentRepository
@@ -169,7 +169,9 @@ class MaintenanceSweepTest(
         val unique = System.nanoTime()
         return requireNotNull(
             users.save(
-                User(
+                // An instructor, because the courses this sweep operates on need
+                // an owner and only an instructor account may be one.
+                Instructor(
                     email = "sweep-$unique@example.com",
                     username = "sweep-$unique",
                     passwordHash = "{noop}irrelevant",

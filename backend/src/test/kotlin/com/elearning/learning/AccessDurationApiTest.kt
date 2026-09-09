@@ -3,6 +3,7 @@ package com.elearning.learning
 import com.elearning.learning.domain.EnrollmentStatus
 import com.elearning.learning.infrastructure.EnrollmentRepository
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -34,6 +35,7 @@ class AccessDurationApiTest(
     @Autowired val objectMapper: ObjectMapper,
     @Autowired val enrollments: EnrollmentRepository,
     @Autowired val sweeper: com.elearning.learning.application.EnrollmentExpirySweeper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -45,6 +47,19 @@ class AccessDurationApiTest(
             content = """{"email":"$unique@example.com","username":"$unique","password":"$password"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         val id = UUID.fromString(objectMapper.readTree(body).get("id").asString())
+        val token = objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+        return token to id
+    }
+
+    /** The same, but an instructor - the only kind of account that may author. */
+    private fun instructorTokenFor(label: String): Pair<String, UUID> {
+        val unique = "$label-${System.nanoTime()}"
+        val id = UUID.fromString(accounts.instructor("$unique@example.com", unique, password))
         val token = objectMapper.readTree(
             mockMvc.post("/api/v1/auth/login") {
                 contentType = MediaType.APPLICATION_JSON
@@ -87,7 +102,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `a course with no duration grants access that never lapses`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, _) = course(owner, days = null)
         val (student, studentId) = tokenFor("student")
 
@@ -102,7 +117,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `enrolling in a timed course stamps the window onto the enrolment`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, _) = course(owner, days = 30)
         val (student, studentId) = tokenFor("student")
 
@@ -118,7 +133,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `shortening a course's window never shortens access already granted`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, _) = course(owner, days = 365)
         val (student, studentId) = tokenFor("student")
         mockMvc.post("/api/v1/courses/$courseId/enroll") {
@@ -142,7 +157,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `an expired enrolment refuses work and the sweep makes its status honest`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, itemId) = course(owner, days = 30)
         val (student, studentId) = tokenFor("student")
         mockMvc.post("/api/v1/courses/$courseId/enroll") {
@@ -172,7 +187,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `re-enrolling after expiry starts a fresh window instead of returning a dead one`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, itemId) = course(owner, days = 30)
         val (student, studentId) = tokenFor("student")
         mockMvc.post("/api/v1/courses/$courseId/enroll") {
@@ -199,7 +214,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `the duration is visible on the course so an author can see what they set`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         val (courseId, _) = course(owner, days = 90)
         mockMvc.get("/api/v1/courses/$courseId") {
             header("Authorization", "Bearer $owner")
@@ -211,7 +226,7 @@ class AccessDurationApiTest(
 
     @Test
     fun `a zero or negative duration is rejected rather than stored`() {
-        val (owner, _) = tokenFor("owner")
+        val (owner, _) = instructorTokenFor("owner")
         mockMvc.post("/api/v1/courses") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $owner")

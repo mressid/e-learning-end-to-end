@@ -1,6 +1,7 @@
 package com.elearning.assessment
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
@@ -30,6 +31,7 @@ import java.time.Instant
 class AssignmentApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -47,6 +49,23 @@ class AssignmentApiTest(
         return objectMapper.readTree(body).get("accessToken").asString()
     }
 
+    /**
+     * Somebody who can own a course.
+     *
+     * Registration produces a student, and a student cannot author, so an
+     * instructor account is made directly. [tokenFor] stays the learner.
+     */
+    private fun instructorTokenFor(label: String): String {
+        val unique = "$label-${System.nanoTime()}"
+        accounts.instructor("$unique@example.com", unique, password)
+        return objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andReturn().response.contentAsString,
+        ).get("accessToken").asString()
+    }
+
     private fun postJson(url: String, token: String, json: String): String =
         mockMvc.post(url) {
             contentType = MediaType.APPLICATION_JSON
@@ -60,7 +79,7 @@ class AssignmentApiTest(
     private data class Fixture(val teacher: String, val courseId: String, val itemId: String)
 
     private fun courseWithItem(type: String): Fixture {
-        val teacher = tokenFor("teacher")
+        val teacher = instructorTokenFor("teacher")
         val courseId = id(postJson("/api/v1/courses", teacher, """{"title":"C ${System.nanoTime()}"}"""))
         val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
         val itemId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"I","type":"$type"}"""))

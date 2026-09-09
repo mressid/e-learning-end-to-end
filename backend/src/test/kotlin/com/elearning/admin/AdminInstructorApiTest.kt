@@ -17,10 +17,11 @@ import tools.jackson.databind.ObjectMapper
 /**
  * Creating and listing instructors.
  *
- * Since V11 an instructor is a flag on the account rather than a consequence of
- * owning a course, so the interesting cases are the ones the old derivation
- * could not express: somebody enrolled before they have anything to teach, and
- * somebody whose flag is taken away while their courses stay theirs.
+ * An instructor is a kind of account, decided when it is created and permanent
+ * afterwards. So the cases that matter are the one the old ownership-derived
+ * roster could not express - somebody appointed before they have anything to
+ * teach - and the one the flag that replaced it allowed by mistake: turning a
+ * learner into an author with a PATCH.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -77,7 +78,7 @@ class AdminInstructorApiTest(
         ).get("accessToken").asString()
     }
 
-    private fun createUser(token: String, label: String, instructor: Boolean): String {
+    private fun createUser(token: String, label: String, type: String): String {
         val unique = "$label-${System.nanoTime()}"
         val body = mockMvc.post("/api/v1/admin/users") {
             contentType = MediaType.APPLICATION_JSON
@@ -87,7 +88,7 @@ class AdminInstructorApiTest(
                     "email" to "$unique@example.com",
                     "username" to unique,
                     "password" to password,
-                    "isInstructor" to instructor,
+                    "type" to type,
                 ),
             )
         }.andExpect { status { isOk() } }.andReturn().response.contentAsString
@@ -106,13 +107,13 @@ class AdminInstructorApiTest(
                     "email" to "teacher-${System.nanoTime()}@example.com",
                     "username" to "teacher-${System.nanoTime()}",
                     "password" to password,
-                    "isInstructor" to true,
+                    "type" to "INSTRUCTOR",
                 ),
             )
         }.andExpect { status { isOk() } }.andReturn().response.contentAsString
 
         val json = objectMapper.readTree(body)
-        assertThat(json.get("isInstructor").asBoolean()).isTrue()
+        assertThat(json.get("type").asString()).isEqualTo("INSTRUCTOR")
         // Not PENDING: an administrator typing the address is the verification,
         // so there is no confirmation email to wait for.
         assertThat(json.get("status").asString()).isEqualTo("ACTIVE")
@@ -129,7 +130,7 @@ class AdminInstructorApiTest(
                     "email" to "$unique@example.com",
                     "username" to unique,
                     "password" to password,
-                    "isInstructor" to true,
+                    "type" to "INSTRUCTOR",
                 ),
             )
         }.andExpect { status { isOk() } }
@@ -190,8 +191,8 @@ class AdminInstructorApiTest(
 
     @Test
     fun `an instructor with no courses still appears on the roster`() {
-        // The whole point of the flag. The old ownership-derived roster could
-        // not show this person at all.
+        // The whole point of appointing rather than deriving. The old
+        // ownership-derived roster could not show this person at all.
         val su = superToken()
         val unique = "fresh-${System.nanoTime()}"
         mockMvc.post("/api/v1/admin/users") {
@@ -202,7 +203,7 @@ class AdminInstructorApiTest(
                     "email" to "$unique@example.com",
                     "username" to unique,
                     "password" to password,
-                    "isInstructor" to true,
+                    "type" to "INSTRUCTOR",
                 ),
             )
         }.andExpect { status { isOk() } }
@@ -221,9 +222,9 @@ class AdminInstructorApiTest(
     }
 
     @Test
-    fun `a learner who is not flagged is absent from the roster`() {
+    fun `a student account is absent from the roster`() {
         val su = superToken()
-        val id = createUser(su, "justalearner", instructor = false)
+        val id = createUser(su, "justalearner", type = "STUDENT")
 
         val body = mockMvc.get("/api/v1/admin/instructors") {
             header("Authorization", "Bearer $su")
@@ -250,17 +251,20 @@ class AdminInstructorApiTest(
     // ---- updating ---------------------------------------------------------
 
     @Test
-    fun `promoting a learner puts them on the roster`() {
+    fun `a student cannot be promoted into an instructor`() {
+        // The flag this replaced made "instructor" a setting. Sending the field
+        // now changes nothing: it is not part of the update contract, so it is
+        // ignored rather than honoured, and the roster still does not list them.
         val su = superToken()
-        val id = createUser(su, "promoted", instructor = false)
+        val id = createUser(su, "promoted", type = "STUDENT")
 
         mockMvc.patch("/api/v1/admin/users/$id") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $su")
-            content = """{"isInstructor":true}"""
+            content = """{"isInstructor":true,"type":"INSTRUCTOR"}"""
         }.andExpect {
             status { isOk() }
-            jsonPath("$.isInstructor") { value(true) }
+            jsonPath("$.type") { value("STUDENT") }
         }
 
         val body = mockMvc.get("/api/v1/admin/instructors") {
@@ -270,13 +274,48 @@ class AdminInstructorApiTest(
         val ids = objectMapper.readTree(body).get("content").let { c ->
             (0 until c.size()).map { c.get(it).get("id").asString() }
         }
-        assertThat(ids).contains(id)
+        assertThat(ids).doesNotContain(id)
+    }
+
+    @Test
+    fun `an instructor cannot be demoted into a student`() {
+        val su = superToken()
+        val id = createUser(su, "demoted", type = "INSTRUCTOR")
+
+        mockMvc.patch("/api/v1/admin/users/$id") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $su")
+            content = """{"type":"STUDENT"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.type") { value("INSTRUCTOR") }
+        }
+    }
+
+    @Test
+    fun `an unknown account type is refused rather than defaulted`() {
+        val unique = "bogus-${System.nanoTime()}"
+        mockMvc.post("/api/v1/admin/users") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${superToken()}")
+            content = objectMapper.writeValueAsString(
+                mapOf(
+                    "email" to "$unique@example.com",
+                    "username" to unique,
+                    "password" to password,
+                    "type" to "ADMIN",
+                ),
+            )
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("INVALID_USER_TYPE") }
+        }
     }
 
     @Test
     fun `an update touches only the fields sent`() {
         val su = superToken()
-        val id = createUser(su, "partial", instructor = true)
+        val id = createUser(su, "partial", type = "INSTRUCTOR")
         val before = objectMapper.readTree(
             mockMvc.get("/api/v1/admin/users/$id") {
                 header("Authorization", "Bearer $su")
@@ -296,20 +335,131 @@ class AdminInstructorApiTest(
         )
         assertThat(after.get("email").asString()).isEqualTo(before.get("email").asString())
         assertThat(after.get("username").asString()).isEqualTo(before.get("username").asString())
-        // The flag was not in the payload, so it must not have been cleared.
-        assertThat(after.get("isInstructor").asBoolean()).isTrue()
+        // The kind of account is not in the update contract at all, so it is
+        // unchanged for the same reason it is unchangeable.
+        assertThat(after.get("type").asString()).isEqualTo("INSTRUCTOR")
+    }
+
+    // ---- resetting a lost password ---------------------------------------
+
+    @Test
+    fun `user_write sets an instructor's password and they sign in with it`() {
+        // The case this exists for: an instructor an administrator created, who
+        // has no working inbox for reset-by-email to reach.
+        val su = superToken()
+        val unique = "lostit-${System.nanoTime()}"
+        val id = objectMapper.readTree(
+            mockMvc.post("/api/v1/admin/users") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer $su")
+                content = objectMapper.writeValueAsString(
+                    mapOf(
+                        "email" to "$unique@example.com",
+                        "username" to unique,
+                        "password" to password,
+                        "type" to "INSTRUCTOR",
+                    ),
+                )
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ).get("id").asString()
+
+        val replacement = "an entirely different passphrase"
+        mockMvc.post("/api/v1/admin/users/$id/password") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${adminWith("user.read", "user.write")}")
+            content = objectMapper.writeValueAsString(mapOf("newPassword" to replacement))
+        }.andExpect {
+            status { isOk() }
+            // Still an instructor: a reset changes the password, nothing else.
+            jsonPath("$.type") { value("INSTRUCTOR") }
+        }
+
+        mockMvc.post("/api/v1/auth/login") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"email":"$unique@example.com","password":"$replacement"}"""
+        }.andExpect { status { isOk() } }
+
+        mockMvc.post("/api/v1/auth/login") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"email":"$unique@example.com","password":"$password"}"""
+        }.andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `resetting ends the sessions the old password opened`() {
+        val su = superToken()
+        val unique = "stillin-${System.nanoTime()}"
+        val id = objectMapper.readTree(
+            mockMvc.post("/api/v1/admin/users") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer $su")
+                content = objectMapper.writeValueAsString(
+                    mapOf(
+                        "email" to "$unique@example.com",
+                        "username" to unique,
+                        "password" to password,
+                        "type" to "INSTRUCTOR",
+                    ),
+                )
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ).get("id").asString()
+
+        val refresh = objectMapper.readTree(
+            mockMvc.post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"email":"$unique@example.com","password":"$password"}"""
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ).get("refreshToken").asString()
+
+        mockMvc.post("/api/v1/admin/users/$id/password") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $su")
+            content = objectMapper.writeValueAsString(mapOf("newPassword" to "yet another passphrase"))
+        }.andExpect { status { isOk() } }
+
+        mockMvc.post("/api/v1/auth/refresh") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(mapOf("refreshToken" to refresh))
+        }.andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `resetting a password needs user_write, and user_read is not enough`() {
+        val su = superToken()
+        val id = createUser(su, "readonly", type = "INSTRUCTOR")
+
+        mockMvc.post("/api/v1/admin/users/$id/password") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${adminWith("user.read")}")
+            content = objectMapper.writeValueAsString(mapOf("newPassword" to "not mine to set"))
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("PERMISSION_DENIED") }
+        }
+    }
+
+    @Test
+    fun `a password below the minimum is refused`() {
+        val su = superToken()
+        val id = createUser(su, "tooshort", type = "INSTRUCTOR")
+
+        mockMvc.post("/api/v1/admin/users/$id/password") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $su")
+            content = objectMapper.writeValueAsString(mapOf("newPassword" to "short"))
+        }.andExpect { status { isBadRequest() } }
     }
 
     @Test
     fun `updating needs user_write`() {
         val su = superToken()
-        val id = createUser(su, "protected", instructor = false)
+        val id = createUser(su, "protected", type = "STUDENT")
         val token = adminWith("user.read")
 
         mockMvc.patch("/api/v1/admin/users/$id") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $token")
-            content = """{"isInstructor":true}"""
+            content = """{"firstName":"Nope"}"""
         }.andExpect {
             status { isForbidden() }
             jsonPath("$.code") { value("PERMISSION_DENIED") }

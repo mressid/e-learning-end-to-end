@@ -1,6 +1,7 @@
 package com.elearning.admin
 
 import com.elearning.shared.testing.IntegrationTest
+import com.elearning.shared.testing.TestAccounts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -24,6 +25,7 @@ import tools.jackson.databind.ObjectMapper
 class AdminCourseApiTest(
     @Autowired val mockMvc: MockMvc,
     @Autowired val objectMapper: ObjectMapper,
+    @Autowired val accounts: TestAccounts,
 ) : IntegrationTest() {
 
     private val password = "correct horse battery staple"
@@ -69,12 +71,10 @@ class AdminCourseApiTest(
         ).get("accessToken").asString()
     }
 
+    /** An instructor: registration makes students, and a student cannot author. */
     private fun teacher(): String {
         val unique = "teacher-${System.nanoTime()}"
-        mockMvc.post("/api/v1/auth/register") {
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"email":"$unique@example.com","username":"$unique","password":"$password"}"""
-        }.andExpect { status { isCreated() } }
+        accounts.instructor("$unique@example.com", unique, password)
         return objectMapper.readTree(
             mockMvc.post("/api/v1/auth/login") {
                 contentType = MediaType.APPLICATION_JSON

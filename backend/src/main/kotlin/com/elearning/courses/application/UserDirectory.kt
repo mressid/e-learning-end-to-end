@@ -25,12 +25,11 @@ interface UserDirectory {
     fun summaries(userIds: Collection<UUID>): Map<UUID, UserSummary>
 
     /**
-     * The people flagged as instructors.
+     * The instructor accounts.
      *
-     * Asked of identity rather than derived here from `courses.owner_id`, because
-     * since V11 the flag is the fact and ownership is a consequence of it. The
-     * old derivation could not show an instructor who had not started a course
-     * yet, which is exactly the person an administrator has just enrolled.
+     * Asked of identity rather than derived here from `courses.owner_id`: an
+     * instructor appointed this morning has no courses yet, and is exactly the
+     * person an administrator has just created and wants to see.
      *
      * Still consumer-declared, so the dependency stays one-directional (§8):
      * courses asks identity, never the reverse.
@@ -38,18 +37,15 @@ interface UserDirectory {
     fun instructors(term: String?, pageable: Pageable): Page<UserSummary>
 
     /**
-     * Records that someone authors courses, because they just started one.
+     * Whether this account may author courses.
      *
-     * Without this the flag and reality drift apart: anyone may still create a
-     * course, so a self-service author would own courses and yet be missing from
-     * the roster of people who author courses. Flagging on create keeps the two
-     * in agreement and changes nothing about who is *allowed* to author - that
-     * remains open, and gating it is a separate decision.
-     *
-     * Idempotent, and never clears the flag: losing your last course does not
-     * un-appoint you.
+     * There used to be the opposite of this - a `markAsInstructor` that flipped
+     * a flag on whoever created a course, so that authoring made you an author.
+     * The two kinds of account are now distinct and permanent, so the question
+     * is asked before the fact instead of asserted after it. The database agrees
+     * independently: `courses.owner_id` references the instructor table.
      */
-    fun markAsInstructor(userId: UUID)
+    fun isInstructor(userId: UUID): Boolean
 }
 
 data class UserSummary(

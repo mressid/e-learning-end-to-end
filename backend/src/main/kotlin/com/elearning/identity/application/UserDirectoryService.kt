@@ -1,8 +1,13 @@
 package com.elearning.identity.application
 
+import com.elearning.identity.domain.Instructor
+import com.elearning.identity.domain.Student
 import com.elearning.identity.domain.User
 import com.elearning.identity.domain.UserProfile
 import com.elearning.identity.domain.UserStatus
+import com.elearning.identity.domain.UserType
+import com.elearning.identity.infrastructure.InstructorRepository
+import com.elearning.identity.infrastructure.StudentRepository
 import com.elearning.identity.infrastructure.UserProfileRepository
 import com.elearning.identity.infrastructure.UserRepository
 import com.elearning.shared.errors.BusinessRuleException
@@ -29,6 +34,8 @@ import java.util.UUID
 @Service
 class UserDirectoryService(
     private val users: UserRepository,
+    private val students: StudentRepository,
+    private val instructors: InstructorRepository,
     private val profiles: UserProfileRepository,
     private val refreshTokens: RefreshTokenService,
     private val audit: AuditService,
@@ -36,13 +43,21 @@ class UserDirectoryService(
     private val passwordEncoder: PasswordEncoder,
 ) {
 
+    /**
+     * The learners, and only the learners.
+     *
+     * It used to be every account, with the instructors marked by a badge. They
+     * are separate kinds now, so this reads `students` and an instructor cannot
+     * turn up here at all - not even if a caller forgets a filter, because there
+     * is no filter to forget.
+     */
     @Transactional(readOnly = true)
-    fun list(term: String?, status: UserStatus?, pageable: Pageable): Page<User> {
+    fun list(term: String?, status: UserStatus?, pageable: Pageable): Page<Student> {
         platformAccess.require("user.read")
         return when {
-            !term.isNullOrBlank() -> users.search(term.trim(), pageable)
-            status != null -> users.findByStatus(status, pageable)
-            else -> users.findAll(pageable)
+            !term.isNullOrBlank() -> students.search(term.trim(), pageable)
+            status != null -> students.findByStatus(status, pageable)
+            else -> students.findAll(pageable)
         }
     }
 
@@ -101,16 +116,20 @@ class UserDirectoryService(
         return user
     }
 
-    /** Instructors, flagged rather than inferred - so one with no courses still appears. */
+    /** The roster: everyone whose account is an instructor account, courses or not. */
     @Transactional(readOnly = true)
-    fun listInstructors(term: String?, pageable: Pageable): Page<User> {
+    fun listInstructors(term: String?, pageable: Pageable): Page<Instructor> {
         platformAccess.require("user.read")
         return if (term.isNullOrBlank()) {
-            users.findByIsInstructorTrue(pageable)
+            instructors.findAll(pageable)
         } else {
-            users.searchInstructors(term.trim(), pageable)
+            instructors.search(term.trim(), pageable)
         }
     }
+
+    /** Whether an account may author courses - which is to say, whether it is one. */
+    @Transactional(readOnly = true)
+    fun isInstructor(userId: UUID): Boolean = instructors.existsById(userId)
 
     /**
      * Creates an account on someone's behalf.
@@ -122,6 +141,10 @@ class UserDirectoryService(
      * The password is a starting one. Nothing here forces a change on first
      * sign-in, because no such mechanism exists yet - say so when handing it
      * over rather than assuming the system will ask.
+     *
+     * `type` is the one field that is decided here and never again. There is no
+     * edit that turns a student into an instructor, so choosing wrongly means
+     * creating the other account, not correcting this one.
      */
     @Transactional
     fun create(command: CreateUserCommand): User {
@@ -136,22 +159,23 @@ class UserDirectoryService(
             throw ConflictException("USERNAME_TAKEN", "That username is already taken")
         }
 
-        val user = users.save(
-            User(
-                email = command.email.lowercase(),
-                username = command.username,
-                passwordHash = requireNotNull(passwordEncoder.encode(command.password)),
-                status = UserStatus.ACTIVE,
-                isInstructor = command.isInstructor,
-            ),
-        )
+        val email = command.email.lowercase()
+        val hash = requireNotNull(passwordEncoder.encode(command.password))
+        val user: User = when (command.type) {
+            UserType.STUDENT -> students.save(
+                Student(email, command.username, hash, UserStatus.ACTIVE),
+            )
+            UserType.INSTRUCTOR -> instructors.save(
+                Instructor(email, command.username, hash, UserStatus.ACTIVE),
+            )
+        }
         val id = requireNotNull(user.id)
 
         profiles.save(
             UserProfile(user = user, firstName = command.firstName, lastName = command.lastName),
         )
 
-        val kind = if (command.isInstructor) "instructor" else "learner"
+        val kind = command.type.name.lowercase()
         audit.record(
             action = "$kind.created",
             summary = "Created $kind ${user.email}",
@@ -163,12 +187,49 @@ class UserDirectoryService(
     }
 
     /**
+     * Setting a learner's or instructor's password, because they have lost it.
+     *
+     * The self-service route is reset-by-email, and it stays the normal one.
+     * This is for when that cannot work: an instructor whose address was never
+     * real, or a learner who no longer has the inbox. An administrator sets the
+     * password and hands it over, exactly as they would for a new account.
+     *
+     * Gated on `user.write` like the rest of the directory - the same permission
+     * that can already change the address a reset email would go to, so guarding
+     * this more tightly would protect nothing.
+     *
+     * Their sessions end. A forgotten password often means a shared or leaked
+     * one, and leaving the old sessions alive would let whoever has it stay.
+     */
+    @Transactional
+    fun setPassword(userId: UUID, newPassword: String): User {
+        platformAccess.require("user.write")
+        val user = users.findById(userId)
+            .orElseThrow { NotFoundException("USER_NOT_FOUND", "User not found") }
+
+        user.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))
+        user.updatedAt = Instant.now()
+        refreshTokens.revokeAllForUser(userId)
+
+        audit.record(
+            action = "user.password_reset",
+            summary = "Reset the password of ${user.email}",
+            targetType = "USER",
+            targetId = userId,
+            details = mapOf("type" to user.type.name),
+        )
+        return user
+    }
+
+    /**
      * Edits an account. Every field is optional; only what is supplied changes.
      *
-     * Clearing `isInstructor` does **not** touch the courses they already own.
-     * Ownership is the authority over those (§11), and revoking the flag only
-     * stops them starting new ones - orphaning live courses to tidy a flag would
-     * be a far larger act than the one being asked for.
+     * What it cannot change is which kind of account this is. That used to be a
+     * boolean here, so an administrator could turn a learner into an author and
+     * back - which made "instructor" a setting rather than a fact, and left the
+     * question "is this person an author" with a different answer depending on
+     * when you asked. A learner who starts teaching gets an instructor account;
+     * their learning history stays on the account that earned it.
      */
     @Transactional
     fun update(userId: UUID, command: UpdateUserCommand): User {
@@ -196,13 +257,6 @@ class UserDirectoryService(
                 }
                 changed["username"] = username
                 user.username = username
-            }
-        }
-
-        command.isInstructor?.let { flag ->
-            if (flag != user.isInstructor) {
-                changed["isInstructor"] = flag
-                user.isInstructor = flag
             }
         }
 
@@ -234,7 +288,8 @@ data class CreateUserCommand(
     val password: String,
     val firstName: String?,
     val lastName: String?,
-    val isInstructor: Boolean,
+    /** Settled here and permanent; see [UserDirectoryService.create]. */
+    val type: UserType,
 )
 
 data class UpdateUserCommand(
@@ -242,5 +297,4 @@ data class UpdateUserCommand(
     val username: String?,
     val firstName: String?,
     val lastName: String?,
-    val isInstructor: Boolean?,
 )

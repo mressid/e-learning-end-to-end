@@ -6,11 +6,11 @@ import com.elearning.identity.application.UserDirectoryService
 import com.elearning.identity.domain.User
 import com.elearning.identity.domain.UserProfile
 import com.elearning.identity.domain.UserStatus
+import com.elearning.identity.domain.UserType
 import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.api.PageResponse
 import com.elearning.shared.errors.ApiError
 import com.elearning.shared.errors.BusinessRuleException
-import com.fasterxml.jackson.annotation.JsonProperty
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
@@ -47,8 +47,12 @@ data class DirectoryUserResponse(
     val displayName: String?,
     val createdAt: Instant,
     val lastLoginAt: Instant?,
-    @get:JsonProperty("isInstructor")
-    val isInstructor: Boolean,
+    @get:Schema(
+        description = "Which kind of account this is. Fixed at creation - there is no " +
+            "transition between the two.",
+        allowableValues = ["STUDENT", "INSTRUCTOR"],
+    )
+    val type: String,
 ) {
     companion object {
         fun of(user: User, profile: UserProfile?) = DirectoryUserResponse(
@@ -59,7 +63,7 @@ data class DirectoryUserResponse(
             displayName = profile?.displayName,
             createdAt = user.createdAt,
             lastLoginAt = user.lastLoginAt,
-            isInstructor = user.isInstructor,
+            type = user.type.name,
         )
     }
 }
@@ -73,20 +77,35 @@ data class CreateUserRequest(
     val password: String,
     val firstName: String? = null,
     val lastName: String? = null,
-    @get:JsonProperty("isInstructor")
-    @get:Schema(description = "May author courses. Not authority over any particular course.")
-    val isInstructor: Boolean = false,
+    @get:Schema(
+        description = "Which kind of account to create. Permanent: there is no edit that " +
+            "turns one into the other, so someone who both learns and teaches holds two " +
+            "accounts. Only an INSTRUCTOR may own or co-instruct a course.",
+        allowableValues = ["STUDENT", "INSTRUCTOR"],
+        defaultValue = "STUDENT",
+    )
+    val type: String = "STUDENT",
 )
 
-@Schema(name = "UpdateUserRequest", description = "Every field optional; only what is sent changes")
+@Schema(
+    name = "UpdateUserRequest",
+    description = "Every field optional; only what is sent changes. The kind of account is " +
+        "not editable - create the other kind instead.",
+)
 data class UpdateUserRequest(
     @field:Email val email: String? = null,
     @field:Size(min = 3, max = 50) val username: String? = null,
     val firstName: String? = null,
     val lastName: String? = null,
-    @get:JsonProperty("isInstructor")
-    @get:Schema(description = "Clearing this does not touch courses they already own")
-    val isInstructor: Boolean? = null,
+)
+
+@Schema(
+    name = "SetUserPasswordRequest",
+    description = "A replacement password, chosen by the administrator doing the reset and " +
+        "handed over out of band. Nothing forces a change on first sign-in.",
+)
+data class SetUserPasswordRequest(
+    @field:NotBlank @field:Size(min = 12, max = 128) val newPassword: String,
 )
 
 @Schema(name = "SetUserStatusRequest")
@@ -153,8 +172,8 @@ class AdminUserController(private val directory: UserDirectoryService) {
     @Operation(
         summary = "Create an account",
         description = "Requires `user.write`. ACTIVE immediately - an administrator typing " +
-            "the address is the verification, so there is no email to wait for. Set " +
-            "`isInstructor` to let them author courses.",
+            "the address is the verification, so there is no email to wait for. `type` " +
+            "decides whether this is a learner or an author, and cannot be changed later.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Created"),
@@ -172,7 +191,7 @@ class AdminUserController(private val directory: UserDirectoryService) {
                 password = request.password,
                 firstName = request.firstName,
                 lastName = request.lastName,
-                isInstructor = request.isInstructor,
+                type = parseType(request.type),
             ),
         )
         val id = requireNotNull(user.id)
@@ -182,9 +201,9 @@ class AdminUserController(private val directory: UserDirectoryService) {
     @PatchMapping("/{userId}")
     @Operation(
         summary = "Edit an account",
-        description = "Requires `user.write`. Only the fields you send change. Clearing " +
-            "`isInstructor` stops them starting new courses; it does not touch the ones " +
-            "they already own, because ownership is what confers authority over those.",
+        description = "Requires `user.write`. Only the fields you send change. Which kind " +
+            "of account this is cannot be edited here, or anywhere: a learner who starts " +
+            "teaching is given an instructor account rather than converted into one.",
     )
     fun update(
         @PathVariable userId: UUID,
@@ -197,9 +216,24 @@ class AdminUserController(private val directory: UserDirectoryService) {
                 username = request.username,
                 firstName = request.firstName,
                 lastName = request.lastName,
-                isInstructor = request.isInstructor,
             ),
         )
+        return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
+    }
+
+    @PostMapping("/{userId}/password")
+    @Operation(
+        summary = "Set a learner's or instructor's password",
+        description = "Requires `user.write`. For when reset-by-email cannot work - an " +
+            "instructor whose address was never real, or a learner who no longer has the " +
+            "inbox. Self-service reset stays the normal route. Their sessions end, so a " +
+            "password that reached the wrong person stops working when it is replaced.",
+    )
+    fun setPassword(
+        @PathVariable userId: UUID,
+        @Valid @RequestBody request: SetUserPasswordRequest,
+    ): DirectoryUserResponse {
+        val user = directory.setPassword(userId, request.newPassword)
         return DirectoryUserResponse.of(user, directory.profilesFor(listOf(userId))[userId])
     }
 
@@ -221,4 +255,13 @@ class AdminUserController(private val directory: UserDirectoryService) {
     private fun parseStatus(raw: String): UserStatus =
         runCatching { UserStatus.valueOf(raw.uppercase()) }
             .getOrElse { throw BusinessRuleException("INVALID_STATUS", "Unknown status $raw") }
+
+    private fun parseType(raw: String): UserType =
+        runCatching { UserType.valueOf(raw.uppercase()) }
+            .getOrElse {
+                throw BusinessRuleException(
+                    "INVALID_USER_TYPE",
+                    "Unknown account type $raw - expected STUDENT or INSTRUCTOR",
+                )
+            }
 }
