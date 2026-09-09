@@ -12,6 +12,8 @@ import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bold,
+  ChevronDown,
+  ChevronRight,
   Code,
   Download,
   FileUp,
@@ -627,6 +629,18 @@ function LessonEditor({
   const [bodySeed, setBodySeed] = useState(0);
   const markdownInput = useRef<HTMLInputElement | null>(null);
 
+  // Whether the body editor and its format row are folded out of the way.
+  // This has to stay a visual toggle rather than a decision about what to
+  // render: `BodyEditor` keeps the live text, the Preview/Write choice, the
+  // caret and the textarea's scroll offset in state that only survives while
+  // it is mounted, and unmounting it on fold would throw all of that away
+  // mid-edit and hand back an empty rewind to `bodyRef` on unfold. So folding
+  // only puts `hidden` on the wrapper below — the editor keeps running
+  // underneath, same as when it's showing. Starts expanded; a body's length
+  // is not a reason to decide this for someone, that's the threshold this
+  // file just stopped doing.
+  const [bodyCollapsed, setBodyCollapsed] = useState(false);
+
   // Fires on every keystroke, so it must not allocate anything that scales
   // with document size and must not itself change identity — it is a prop of
   // the memoised `BodyEditor`, and a fresh closure every render would defeat
@@ -1005,6 +1019,22 @@ function LessonEditor({
           <section className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 w-6 px-0"
+                  aria-expanded={!bodyCollapsed}
+                  aria-controls="l-body-fields"
+                  aria-label={bodyCollapsed ? "Expand body" : "Collapse body"}
+                  onClick={() => setBodyCollapsed((collapsed) => !collapsed)}
+                >
+                  {bodyCollapsed ? (
+                    <ChevronRight className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
                 <Label>Body</Label>
                 <Button
                   type="button"
@@ -1056,39 +1086,42 @@ function LessonEditor({
                 )}
               </div>
             </div>
-            <BodyEditor
-              key={`${itemId}:${bodySeed}`}
-              initialText={bodyRef.current}
-              contentFormat={contentFormat}
-              onTextChange={onTextChange}
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="l-format" className="text-xs text-muted-foreground">
-                  Stored as
-                </Label>
-                <Select
-                  value={contentFormat}
-                  onValueChange={(value) => setContentFormat(value as LessonContentFormat)}
-                >
-                  <SelectTrigger id="l-format" className="h-7 w-36 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FORMATS.map((format) => (
-                      <SelectItem key={format} value={format}>
-                        {FORMAT_LABEL[format]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div id="l-body-fields" className={cn("space-y-2", bodyCollapsed && "hidden")}>
+              <BodyEditor
+                key={`${itemId}:${bodySeed}`}
+                initialText={bodyRef.current}
+                contentFormat={contentFormat}
+                onTextChange={onTextChange}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="l-format" className="text-xs text-muted-foreground">
+                    Stored as
+                  </Label>
+                  <Select
+                    value={contentFormat}
+                    onValueChange={(value) => setContentFormat(value as LessonContentFormat)}
+                  >
+                    <SelectTrigger id="l-format" className="h-7 w-36 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FORMATS.map((format) => (
+                        <SelectItem key={format} value={format}>
+                          {FORMAT_LABEL[format]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* The format is recorded with the text now. It used to be
+                    markdown by the editor's habit and nothing else, which left a
+                    renderer free to guess wrong. */}
+                <p className="flex-1 text-xs text-muted-foreground">
+                  Written down with the text, so whatever displays this later does not have to
+                  guess.
+                </p>
               </div>
-              {/* The format is recorded with the text now. It used to be
-                  markdown by the editor's habit and nothing else, which left a
-                  renderer free to guess wrong. */}
-              <p className="flex-1 text-xs text-muted-foreground">
-                Written down with the text, so whatever displays this later does not have to guess.
-              </p>
             </div>
           </section>
         )}
