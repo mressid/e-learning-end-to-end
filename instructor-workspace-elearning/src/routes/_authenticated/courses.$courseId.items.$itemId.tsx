@@ -48,8 +48,8 @@ function LessonPage() {
   const { courseId, itemId } = Route.useParams();
   const navigate = useNavigate();
 
-  const item = useItemQuery(itemId);
-  const lesson = useLessonQuery(itemId);
+  const item = useItemQuery(courseId, itemId);
+  const lesson = useLessonQuery(courseId, itemId);
   const save = useSaveLessonMutation(courseId);
 
   const [contentType, setContentType] = useState<LessonContentType>("ARTICLE");

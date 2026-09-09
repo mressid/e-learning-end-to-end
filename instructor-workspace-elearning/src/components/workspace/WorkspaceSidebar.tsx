@@ -4,10 +4,7 @@ import {
   ArrowLeft,
   BookOpen,
   ChevronRight,
-  FileCheck,
-  FileText,
   GraduationCap,
-  HelpCircle,
   Layers,
   LayoutDashboard,
   LogOut,
@@ -19,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCourseQuery, useSectionsQuery, useItemsQuery } from "@/hooks/queries";
 import type { SectionResponse } from "@/api";
+import { itemIcon, itemLabelShort } from "@/components/workspace/curriculum-ui";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -74,12 +72,6 @@ function SidebarAccount() {
   );
 }
 
-function itemIcon(type: string | undefined) {
-  if (type === "QUIZ") return HelpCircle;
-  if (type === "ASSIGNMENT") return FileCheck;
-  return FileText;
-}
-
 /**
  * One section in the tree, with its items underneath.
  *
@@ -87,50 +79,105 @@ function itemIcon(type: string | undefined) {
  * with twenty sections would otherwise fire twenty requests to draw a rail
  * that is mostly collapsed. Expanded sections pay for themselves; collapsed
  * ones cost nothing.
+ *
+ * The title opens the section — that is the point of clicking a section — and
+ * the chevron beside it is the only thing that expands the tree. They were one
+ * control before, which left no way to look inside a section without leaving
+ * the one you were editing.
  */
 function SidebarSectionItem({
   courseId,
   section,
   index,
   activeItemId,
+  focusedSectionId,
   isRtl,
 }: {
   courseId: string;
   section: SectionResponse;
   index: number;
   activeItemId: string | null;
+  focusedSectionId: string | null;
   isRtl: boolean;
 }) {
-  const [isExpanded, setIsExpanded] = React.useState(true);
-  const { data: items, isLoading } = useItemsQuery(section.id ?? "", isExpanded);
+  const sectionId = section.id ?? "";
+  const isFocused = focusedSectionId === sectionId;
+
+  /**
+   * Open by default; when a section is being worked on, only that one.
+   *
+   * `manual` is null until somebody uses the chevron, and goes back to null
+   * whenever the focused section changes. So the rail follows you around
+   * without arguing: choosing a section collapses the others out of the way,
+   * and expanding one of them anyway keeps it open until you move on.
+   */
+  const [manual, setManual] = React.useState<boolean | null>(null);
+  React.useEffect(() => setManual(null), [focusedSectionId]);
+  const isExpanded = manual ?? (focusedSectionId ? isFocused : true);
+
+  const { data: items, isLoading } = useItemsQuery(courseId, sectionId, isExpanded);
 
   return (
-    <div className="space-y-0.5">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+    <div
+      className={cn(
+        "space-y-0.5 transition-opacity",
+        // Everything that is not the section in hand steps back a little.
+        focusedSectionId && !isFocused && "opacity-55 hover:opacity-100",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-1 rounded-lg pr-1 transition-colors rtl:pl-1 rtl:pr-0",
+          isFocused ? "bg-primary/10" : "hover:bg-sidebar-accent",
+        )}
       >
-        <div className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setManual(!isExpanded)}
+          aria-label={isExpanded ? `Collapse ${section.title}` : `Expand ${section.title}`}
+          aria-expanded={isExpanded}
+          className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground/80 transition-colors hover:text-foreground"
+        >
           <ChevronRight
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-150",
+              "h-3.5 w-3.5 transition-transform duration-150",
               isExpanded && (isRtl ? "-rotate-90 text-foreground" : "rotate-90 text-foreground"),
             )}
           />
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary text-[10px] font-bold text-foreground">
-            {index + 1}
+        </button>
+
+        <Link
+          to="/courses/$courseId"
+          params={{ courseId }}
+          search={{ tab: "curriculum", section: sectionId }}
+          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-1.5 rounded-md py-1.5 text-xs"
+          title={section.title}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span
+              className={cn(
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold",
+                isFocused ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
+              )}
+            >
+              {index + 1}
+            </span>
+            <span
+              className={cn(
+                "truncate text-left text-xs rtl:text-right",
+                isFocused ? "font-semibold text-foreground" : "font-medium text-foreground",
+              )}
+            >
+              {section.title}
+            </span>
           </span>
-          <span className="truncate text-left text-xs font-medium text-foreground rtl:text-right">
-            {section.title}
-          </span>
-        </div>
-        {items && items.length > 0 && (
-          <span className="shrink-0 rounded-full bg-secondary/80 px-1.5 text-[9px] font-medium text-muted-foreground">
-            {items.length}
-          </span>
-        )}
-      </button>
+          {items && items.length > 0 && (
+            <span className="shrink-0 rounded-full bg-secondary/80 px-1.5 text-[9px] font-medium text-muted-foreground">
+              {items.length}
+            </span>
+          )}
+        </Link>
+      </div>
 
       {isExpanded && (
         <div className="ml-3 space-y-0.5 border-l border-sidebar-border/50 pl-2.5 rtl:ml-0 rtl:mr-3 rtl:border-l-0 rtl:border-r rtl:pl-0 rtl:pr-2.5">
@@ -144,7 +191,7 @@ function SidebarSectionItem({
               const isSelected = activeItemId === item.id;
               const Icon = itemIcon(item.type);
               // A lesson opens its editor; a quiz or assignment has none yet,
-              // so those still just select themselves in the curriculum. Two
+              // so those select themselves inside their section instead. Two
               // literal <Link>s rather than one with spread props: the router
               // types each destination against its own params and search, and a
               // union of the two satisfies neither.
@@ -172,7 +219,7 @@ function SidebarSectionItem({
                       isSelected ? "text-primary-foreground/80" : "text-muted-foreground/60",
                     )}
                   >
-                    {item.type === "LESSON" ? "Lesson" : item.type === "QUIZ" ? "Quiz" : "Task"}
+                    {itemLabelShort(item.type)}
                   </span>
                 </>
               );
@@ -191,7 +238,7 @@ function SidebarSectionItem({
                   key={item.id}
                   to="/courses/$courseId"
                   params={{ courseId }}
-                  search={{ tab: "curriculum", item: item.id ?? "" }}
+                  search={{ tab: "curriculum", section: sectionId, item: item.id ?? "" }}
                   className={rowClass}
                 >
                   {label}
@@ -231,6 +278,9 @@ export function WorkspaceSidebar() {
   // open — the tree marks both the same way.
   const openItemId = currentPath.match(/^\/courses\/[a-zA-Z0-9-]+\/items\/([a-zA-Z0-9-]+)/)?.[1];
   const activeItemId = openItemId ?? search["item"] ?? null;
+  // The section being worked on, if any. The tree opens it and stands the
+  // others down; the curriculum screen shows it and nothing else.
+  const focusedSectionId = search["section"] ?? null;
 
   // Inside a course, the rail becomes that course.
   const courseMatch = currentPath.match(/^\/courses\/([a-zA-Z0-9-]+)/);
@@ -361,10 +411,22 @@ export function WorkspaceSidebar() {
             <div className="space-y-1.5 border-t border-sidebar-border/60 pt-2">
               <div className="flex items-center justify-between px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <span>Sections &amp; items</span>
-                {sections.data && sections.data.length > 0 && (
-                  <span className="text-[10px] font-normal normal-case text-muted-foreground">
-                    {sections.data.length}
-                  </span>
+                {focusedSectionId ? (
+                  <Link
+                    to="/courses/$courseId"
+                    params={{ courseId }}
+                    search={{ tab: "curriculum" }}
+                    className="text-[10px] font-medium normal-case text-primary hover:underline"
+                  >
+                    Show all
+                  </Link>
+                ) : (
+                  sections.data &&
+                  sections.data.length > 0 && (
+                    <span className="text-[10px] font-normal normal-case text-muted-foreground">
+                      {sections.data.length}
+                    </span>
+                  )
                 )}
               </div>
 
@@ -382,6 +444,7 @@ export function WorkspaceSidebar() {
                       section={section}
                       index={index}
                       activeItemId={activeItemId}
+                      focusedSectionId={focusedSectionId}
                       isRtl={isRtl}
                     />
                   ))
