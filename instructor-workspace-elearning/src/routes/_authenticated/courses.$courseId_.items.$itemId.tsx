@@ -1,6 +1,27 @@
-import { useRef, useState, type FormEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import { ArrowLeft, Download, FileUp, Save, Upload } from "lucide-react";
+import {
+  ArrowLeft,
+  Bold,
+  Code,
+  Download,
+  FileUp,
+  Heading2,
+  Link2,
+  List,
+  Save,
+  Table2,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { useItemQuery, useLessonQuery, useSaveLessonMutation } from "@/hooks/queries";
@@ -15,7 +36,7 @@ import {
   type SaveLessonRequest,
   type SourceType,
 } from "@/api";
-import { MarkdownEditor } from "@/components/workspace/MarkdownEditor";
+import { renderLessonBody } from "@/lib/render-lesson-body";
 import { ResourcePanel } from "@/components/workspace/ResourcePanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,6 +135,12 @@ const COMPLETION: Record<string, { label: string; hint: string }> = {
 };
 
 const WORDS_PER_MINUTE = 200;
+
+// How long the word count and the dirty indicator are allowed to lag behind
+// the keyboard. Nothing that must be correct — what gets submitted, the
+// empty-body check, the unsaved-changes guard — reads this; those read the
+// live ref instead.
+const BODY_SNAPSHOT_DEBOUNCE_MS = 400;
 
 /**
  * What a lesson body may be loaded from, and how much of it.
@@ -226,6 +253,319 @@ function LessonPage() {
 }
 
 /**
+ * The two shapes most of the toolbar's edits take, factored out so bold,
+ * heading, inline code, and the list button do not each reimplement the same
+ * substring arithmetic.
+ *
+ * `wrapSelection` covers bold and inline code, where the selection becomes
+ * the inside of something — an empty selection falls back to `placeholder`
+ * so the button still produces valid markdown to type over. `linePrefix`
+ * covers headings and list items, where the unit that matters is the line,
+ * not the character range, so it walks outward to the surrounding line
+ * boundaries before prefixing every line the selection touches. Both return
+ * the caret placed somewhere sensible to keep typing, not just the new
+ * string.
+ */
+function wrapSelection(
+  value: string,
+  start: number,
+  end: number,
+  before: string,
+  after: string,
+  placeholder: string,
+) {
+  const selected = value.slice(start, end) || placeholder;
+  const next = value.slice(0, start) + before + selected + after + value.slice(end);
+  const selStart = start + before.length;
+  return { next, selStart, selEnd: selStart + selected.length };
+}
+
+function linePrefix(value: string, start: number, end: number, prefix: string) {
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const lineEndIndex = value.indexOf("\n", end);
+  const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+  const block = value.slice(lineStart, lineEnd);
+  const prefixed = block
+    .split("\n")
+    .map((line) => prefix + line)
+    .join("\n");
+  const next = value.slice(0, lineStart) + prefixed + value.slice(lineEnd);
+  return { next, selStart: lineStart, selEnd: lineStart + prefixed.length };
+}
+
+function insertSnippet(value: string, start: number, end: number, snippet: string) {
+  const next = value.slice(0, start) + snippet + value.slice(end);
+  const selStart = start + snippet.length;
+  return { next, selStart, selEnd: selStart };
+}
+
+// A link is the one button that is neither a clean wrap nor a clean insert:
+// the selection becomes the label, but the part worth landing the caret on
+// is the URL, so the placeholder scheme the other buttons use does not fit.
+function insertLink(value: string, start: number, end: number) {
+  const label = value.slice(start, end) || "link text";
+  const url = "https://";
+  const before = value.slice(0, start);
+  const next = `${before}[${label}](${url})${value.slice(end)}`;
+  const urlStart = before.length + label.length + 3;
+  return { next, selStart: urlStart, selEnd: urlStart + url.length };
+}
+
+const TABLE_SNIPPET = "\n| Header | Header |\n| --- | --- |\n| Cell | Cell |\n";
+
+/**
+ * The markdown syntax toolbar, shown above the textarea only for the
+ * MARKDOWN format — HTML and plain text have no syntax for these buttons to
+ * insert. Each button only describes the edit it wants (`onEdit` is
+ * `BodyEditor`'s `handleToolbarEdit`, closed over its textarea ref); the
+ * selection itself is read from the DOM node at click time rather than
+ * tracked in React state, since it changes on every click and arrow key and
+ * has no reason to live any higher than the element that already tracks it
+ * for free.
+ */
+function MarkdownToolbar({
+  onEdit,
+}: {
+  onEdit: (
+    transform: (
+      value: string,
+      start: number,
+      end: number,
+    ) => {
+      next: string;
+      selStart: number;
+      selEnd: number;
+    },
+  ) => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Bold"
+        onClick={() => onEdit((v, s, e) => wrapSelection(v, s, e, "**", "**", "bold text"))}
+      >
+        <Bold className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Heading"
+        onClick={() => onEdit((v, s, e) => linePrefix(v, s, e, "## "))}
+      >
+        <Heading2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Link"
+        onClick={() => onEdit((v, s, e) => insertLink(v, s, e))}
+      >
+        <Link2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Inline code"
+        onClick={() => onEdit((v, s, e) => wrapSelection(v, s, e, "`", "`", "code"))}
+      >
+        <Code className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Bulleted list"
+        onClick={() => onEdit((v, s, e) => linePrefix(v, s, e, "- "))}
+      >
+        <List className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 px-0"
+        title="Table"
+        onClick={() => onEdit((v, s, e) => insertSnippet(v, s, e, TABLE_SNIPPET))}
+      >
+        <Table2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The one part of the page that changes on every keystroke.
+ *
+ * Everything else in `LessonEditor` — the format picker, the resource panel,
+ * the word count — used to re-render on every character because the body
+ * lived in that component's own state. It doesn't need to: nothing downstream
+ * of a keystroke needs to react to it faster than the debounce in the parent,
+ * so the live text is kept here instead, and `memo` means this is the only
+ * thing that re-renders while someone types. `onTextChange` has to be a
+ * stable callback for that to hold — a new closure every render would defeat
+ * the memoisation as surely as not having it.
+ *
+ * There is exactly one copy of the text, held in this component's own state,
+ * and two ways to look at it: Preview runs it through `renderLessonBody` and
+ * Write shows the textarea it actually lives in. Toggling either way just
+ * changes which of those is on screen — there is no longer a reason to make
+ * that one-way, the way opening the old rich editor used to be, because a
+ * single textarea can never disagree with itself about what was typed. A
+ * lesson opens on Preview so that opening it shows the lesson rather than an
+ * empty box; an empty body opens on Write instead, since there is nothing to
+ * preview and the obvious next move is to start typing.
+ */
+const BodyEditor = memo(function BodyEditor({
+  initialText,
+  contentFormat,
+  onTextChange,
+}: {
+  initialText: string;
+  contentFormat: LessonContentFormat;
+  onTextChange: (next: string) => void;
+}) {
+  const [text, setText] = useState(initialText);
+  const [view, setView] = useState<"preview" | "write">(initialText.trim() ? "preview" : "write");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Set by a toolbar button just before the new text lands in state, and
+  // consumed by the layout effect below once the textarea's DOM value has
+  // caught up — setting the selection any earlier would be applied to the
+  // text that is about to be replaced.
+  const pendingSelection = useRef<{ start: number; end: number } | null>(null);
+
+  const handleChange = useCallback(
+    (next: string) => {
+      setText(next);
+      onTextChange(next);
+    },
+    [onTextChange],
+  );
+
+  useLayoutEffect(() => {
+    const pending = pendingSelection.current;
+    if (!pending || !textareaRef.current) return;
+    textareaRef.current.setSelectionRange(pending.start, pending.end);
+    pendingSelection.current = null;
+  }, [text]);
+
+  const handleToolbarEdit = useCallback(
+    (
+      transform: (
+        value: string,
+        start: number,
+        end: number,
+      ) => { next: string; selStart: number; selEnd: number },
+    ) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const { next, selStart, selEnd } = transform(text, el.selectionStart, el.selectionEnd);
+      pendingSelection.current = { start: selStart, end: selEnd };
+      el.focus();
+      handleChange(next);
+    },
+    [text, handleChange],
+  );
+
+  // Parsed only while Preview is the view on screen. Markdown costs
+  // milliseconds where MDXEditor's ProseMirror pass cost seconds, so this is
+  // no longer the thing that decides whether a body is too big to touch — but
+  // a keystroke in Write still has no reason to build markup nobody is
+  // looking at, and on a long lesson that is the difference someone would
+  // feel under their fingers.
+  const rendered = useMemo(
+    () => (view === "preview" ? renderLessonBody(text, contentFormat) : null),
+    [view, text, contentFormat],
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="inline-flex items-center rounded-md border p-0.5 text-xs">
+        <button
+          type="button"
+          onClick={() => setView("preview")}
+          className={cn(
+            "rounded-sm px-2.5 py-1 font-medium transition-colors",
+            view === "preview"
+              ? "bg-secondary text-secondary-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Preview
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("write")}
+          className={cn(
+            "rounded-sm px-2.5 py-1 font-medium transition-colors",
+            view === "write"
+              ? "bg-secondary text-secondary-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Write
+        </button>
+      </div>
+
+      {view === "preview" ? (
+        rendered && rendered.kind === "html" ? (
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none min-h-[65vh] rounded-lg border bg-background p-4"
+            dangerouslySetInnerHTML={{ __html: rendered.html }}
+          />
+        ) : (
+          <pre className="min-h-[65vh] whitespace-pre-wrap rounded-lg border bg-background p-4 font-mono text-xs">
+            {text}
+          </pre>
+        )
+      ) : (
+        <div className="space-y-1.5">
+          {contentFormat === "MARKDOWN" && <MarkdownToolbar onEdit={handleToolbarEdit} />}
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => handleChange(e.target.value)}
+            className="min-h-[65vh] font-mono text-xs"
+            spellCheck={contentFormat !== "HTML"}
+          />
+        </div>
+      )}
+    </div>
+  );
+});
+
+/**
+ * The attachments list at the foot of the page.
+ *
+ * It runs its own queries and holds its own local state and has nothing to do
+ * with the lesson body — `itemId` is the only prop it needs, and that never
+ * changes while someone is typing. `memo` makes that fact pay off: without
+ * it, this would re-render — and re-run its own effects — on every keystroke
+ * upstream, for no reason connected to anything it shows.
+ */
+const LessonResources = memo(function LessonResources({ itemId }: { itemId: string }) {
+  return (
+    <div className="border-t p-4 sm:p-6">
+      <ResourcePanel
+        scope="item"
+        ownerId={itemId}
+        emptyHint="Nothing attached to this lesson yet. Slides, a worksheet, a link to read first."
+      />
+    </div>
+  );
+});
+
+/**
  * The lesson itself, mounted once the lesson it edits is known.
  *
  * `lesson` is null for an item nobody has written yet, which is the ordinary
@@ -257,10 +597,18 @@ function LessonEditor({
   );
   const [url, setUrl] = useState(lesson?.url ?? "");
   const [description, setDescription] = useState(lesson?.description ?? "");
-  // The rich editor is not an <input>, so the body is held here rather than
-  // read off the form. Everything else is here too, because knowing whether
-  // there is anything unsaved means knowing every current value.
-  const [body, setBody] = useState(lesson?.content ?? "");
+  // The body itself lives outside React state entirely. `bodyRef` is always
+  // the current text — everything that must be correct right now (the submit
+  // handler, the empty-body check, the "replace what's written here" confirm)
+  // reads it. `bodySnapshot` is a debounced copy for the things that only
+  // ever display a derived value — the word count, the dirty label — and
+  // `dirtyRef` mirrors "has this changed since it was saved" synchronously,
+  // for the unsaved-changes guard, which cannot afford the same lag: a
+  // navigation half a debounce-interval after a keystroke must still block.
+  const bodyRef = useRef(lesson?.content ?? "");
+  const dirtyRef = useRef(false);
+  const [bodySnapshot, setBodySnapshot] = useState(lesson?.content ?? "");
+  const bodyDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [minutes, setMinutes] = useState(
     lesson?.durationSeconds ? String(Math.floor(lesson.durationSeconds / 60)) : "",
   );
@@ -279,16 +627,44 @@ function LessonEditor({
   const [bodySeed, setBodySeed] = useState(0);
   const markdownInput = useRef<HTMLInputElement | null>(null);
 
-  const saved = {
-    resourceType: (lesson?.resourceType as ResourceType | undefined) ?? "DOCUMENT",
-    sourceType: (lesson?.sourceType as SourceType | undefined) ?? "INLINE",
-    contentFormat: (lesson?.contentFormat as LessonContentFormat | undefined) ?? "MARKDOWN",
-    url: lesson?.url ?? "",
-    description: lesson?.description ?? "",
-    content: lesson?.content ?? "",
-    durationSeconds: lesson?.durationSeconds ?? null,
-    completionRule: (lesson?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
-  };
+  // Fires on every keystroke, so it must not allocate anything that scales
+  // with document size and must not itself change identity — it is a prop of
+  // the memoised `BodyEditor`, and a fresh closure every render would defeat
+  // that memoisation. `dirtyRef` is set before the debounce timer is even
+  // started, so the unsaved-changes guard sees a change immediately; the
+  // snapshot that drives the visible word count and dirty label can lag.
+  const onTextChange = useCallback((next: string) => {
+    bodyRef.current = next;
+    dirtyRef.current = true;
+    if (bodyDebounce.current) clearTimeout(bodyDebounce.current);
+    bodyDebounce.current = setTimeout(() => {
+      setBodySnapshot(next);
+    }, BODY_SNAPSHOT_DEBOUNCE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (bodyDebounce.current) clearTimeout(bodyDebounce.current);
+    };
+  }, []);
+
+  // Rebuilt only when the lesson itself changes, not on every render — it was
+  // a fresh object literal on every keystroke before the body moved out of
+  // this component's state, which made `isDirty` below allocate three times
+  // over just to compare against it.
+  const saved = useMemo(
+    () => ({
+      resourceType: (lesson?.resourceType as ResourceType | undefined) ?? "DOCUMENT",
+      sourceType: (lesson?.sourceType as SourceType | undefined) ?? "INLINE",
+      contentFormat: (lesson?.contentFormat as LessonContentFormat | undefined) ?? "MARKDOWN",
+      url: lesson?.url ?? "",
+      description: lesson?.description ?? "",
+      content: lesson?.content ?? "",
+      durationSeconds: lesson?.durationSeconds ?? null,
+      completionRule: (lesson?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
+    }),
+    [lesson],
+  );
 
   const hasFileAlready = Boolean(lesson?.hasFile) && lesson?.sourceType === sourceType;
   const busy = save.isPending || Boolean(stage);
@@ -298,16 +674,33 @@ function LessonEditor({
     return Number.isFinite(total) && total > 0 ? total : null;
   })();
 
-  const isDirty =
-    resourceType !== saved.resourceType ||
-    sourceType !== saved.sourceType ||
-    (sourceType === "INLINE" &&
-      (body !== saved.content || contentFormat !== saved.contentFormat)) ||
-    (sourceType === "URL" && url !== saved.url) ||
-    description !== saved.description ||
-    durationSeconds !== saved.durationSeconds ||
-    completionRule !== saved.completionRule ||
-    file !== null;
+  // The displayed "Unsaved changes" label — it reads the debounced snapshot,
+  // so it can lag a keystroke behind by design. The navigation guard below
+  // does not use this alone; see `shouldBlockFn`.
+  const isDirty = useMemo(
+    () =>
+      resourceType !== saved.resourceType ||
+      sourceType !== saved.sourceType ||
+      (sourceType === "INLINE" &&
+        (bodySnapshot !== saved.content || contentFormat !== saved.contentFormat)) ||
+      (sourceType === "URL" && url !== saved.url) ||
+      description !== saved.description ||
+      durationSeconds !== saved.durationSeconds ||
+      completionRule !== saved.completionRule ||
+      file !== null,
+    [
+      resourceType,
+      sourceType,
+      bodySnapshot,
+      contentFormat,
+      url,
+      description,
+      durationSeconds,
+      completionRule,
+      file,
+      saved,
+    ],
+  );
 
   /**
    * Leaving with unsaved work asks first.
@@ -316,10 +709,15 @@ function LessonEditor({
    * to lose an afternoon's writing is an ordinary navigation rather than
    * anything careless. `enableBeforeUnload` covers closing the tab, which the
    * router cannot intercept.
+   *
+   * `isDirty` alone is not enough here: it reads the debounced body snapshot,
+   * so a keystroke followed by an immediate navigation could land in the
+   * window before the snapshot catches up. `dirtyRef` is set synchronously on
+   * every keystroke and never lags, so the guard ORs it in.
    */
   const blocker = useBlocker({
-    shouldBlockFn: () => isDirty,
-    enableBeforeUnload: () => isDirty,
+    shouldBlockFn: () => isDirty || dirtyRef.current,
+    enableBeforeUnload: () => isDirty || dirtyRef.current,
     withResolver: true,
   });
 
@@ -338,7 +736,10 @@ function LessonEditor({
       toast.error("That file is bigger than 2 MB. It is probably not a lesson.");
       return;
     }
-    if (body.trim() && !window.confirm(`Replace what is written here with ${chosen.name}?`)) {
+    if (
+      bodyRef.current.trim() &&
+      !window.confirm(`Replace what is written here with ${chosen.name}?`)
+    ) {
       return;
     }
 
@@ -351,7 +752,13 @@ function LessonEditor({
         toast.error("That does not look like a text file.");
         return;
       }
-      setBody(text);
+      // An import is a change worth showing immediately, not on the usual
+      // debounce — nothing about "you just replaced the whole body" should
+      // wait 400ms to be reflected in the word count.
+      if (bodyDebounce.current) clearTimeout(bodyDebounce.current);
+      bodyRef.current = text;
+      dirtyRef.current = true;
+      setBodySnapshot(text);
       setBodySeed((seed) => seed + 1);
       setError("");
       toast.success(`Loaded ${chosen.name}. Nothing is saved until you save the lesson.`);
@@ -360,8 +767,15 @@ function LessonEditor({
     }
   };
 
-  const words = body.trim() ? body.trim().split(/\s+/).length : 0;
-  const readingMinutes = Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+  // Keyed on the debounced snapshot, not the live ref — this is the one place
+  // in the render path that used to run `.trim()` and `.split(/\s+/)` on the
+  // whole body on every keystroke, which is what made a long lesson freeze
+  // the page while typing.
+  const words = useMemo(() => {
+    const trimmed = bodySnapshot.trim();
+    return trimmed ? trimmed.split(/\s+/).length : 0;
+  }, [bodySnapshot]);
+  const readingMinutes = useMemo(() => Math.max(1, Math.round(words / WORDS_PER_MINUTE)), [words]);
 
   const openCurrentFile = async () => {
     try {
@@ -376,7 +790,7 @@ function LessonEditor({
     e.preventDefault();
     setError("");
 
-    if (sourceType === "INLINE" && !body.trim()) {
+    if (sourceType === "INLINE" && !bodyRef.current.trim()) {
       setError("A written lesson needs a body. The server refuses an empty one.");
       return;
     }
@@ -412,7 +826,7 @@ function LessonEditor({
         // field cleared. The file is the exception: omitting it keeps the one
         // already attached, which is the only way to edit a video lesson at all
         // — its media id is never given back to us to re-send.
-        ...(sourceType === "INLINE" ? { content: body.trim(), contentFormat } : {}),
+        ...(sourceType === "INLINE" ? { content: bodyRef.current.trim(), contentFormat } : {}),
         ...(sourceType === "URL" ? { url: url.trim() } : {}),
         ...(mediaId ? { mediaId } : {}),
       };
@@ -423,7 +837,11 @@ function LessonEditor({
       // Take the server's version of what was stored, so anything it trimmed or
       // defaulted does not leave the page looking unsaved.
       setDescription(result.description ?? "");
-      setBody(result.content ?? "");
+      if (bodyDebounce.current) clearTimeout(bodyDebounce.current);
+      const savedContent = result.content ?? "";
+      bodyRef.current = savedContent;
+      setBodySnapshot(savedContent);
+      dirtyRef.current = false;
       setUrl(result.url ?? "");
       setCompletionRule((result.completionRule as LessonCompletionRule | undefined) ?? "MANUAL");
       toast.success("Lesson saved.");
@@ -638,24 +1056,12 @@ function LessonEditor({
                 )}
               </div>
             </div>
-            {contentFormat === "MARKDOWN" ? (
-              <MarkdownEditor
-                value={body}
-                onChange={setBody}
-                seedKey={`${itemId}:${bodySeed}`}
-                className="[&_.lernova-mdx-content]:min-h-[65vh]"
-              />
-            ) : (
-              // The rich editor speaks markdown and only markdown. Handing it
-              // HTML would quietly rewrite somebody's markup, so the other two
-              // formats get a plain box and are stored exactly as typed.
-              <Textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                className="min-h-[65vh] font-mono text-xs"
-                spellCheck={contentFormat === "PLAIN_TEXT"}
-              />
-            )}
+            <BodyEditor
+              key={`${itemId}:${bodySeed}`}
+              initialText={bodyRef.current}
+              contentFormat={contentFormat}
+              onTextChange={onTextChange}
+            />
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
                 <Label htmlFor="l-format" className="text-xs text-muted-foreground">
@@ -766,13 +1172,7 @@ function LessonEditor({
 
       {/* Outside the form: a nested <form> is invalid, and attaching a document
           is its own action rather than part of saving the lesson. */}
-      <div className="border-t p-4 sm:p-6">
-        <ResourcePanel
-          scope="item"
-          ownerId={itemId}
-          emptyHint="Nothing attached to this lesson yet. Slides, a worksheet, a link to read first."
-        />
-      </div>
+      <LessonResources itemId={itemId} />
 
       <AlertDialog open={blocker.status === "blocked"}>
         <AlertDialogContent>
