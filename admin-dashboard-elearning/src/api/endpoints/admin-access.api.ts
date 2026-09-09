@@ -7,6 +7,7 @@ import type {
   PermissionResponse,
   RoleResponse,
   SetAdminStatusRequest,
+  SetPasswordRequest,
   SetRolePermissionsRequest,
 } from "../types";
 import type { PageParams } from "./admin-directory.api";
@@ -77,6 +78,20 @@ export const adminAccessApi = {
     const { data, error } = await apiClient.POST("/api/v1/admin/admins", { body });
     if (error || !data) throw parseApiError(error);
     return data;
+  },
+
+  /**
+   * Requires super admin. For an administrator who has lost their password —
+   * there is no reset-by-email on this side, so somebody sets a new one and
+   * hands it over. Their sessions end. Refused on your own account: use
+   * `changeOwnPassword`, which asks for the current password.
+   */
+  async setAdminPassword(adminId: string, body: SetPasswordRequest): Promise<void> {
+    const { error } = await apiClient.POST("/api/v1/admin/admins/{adminId}/password", {
+      params: { path: { adminId } },
+      body,
+    });
+    if (error) throw parseApiError(error);
   },
 
   async setAdminStatus(adminId: string, body: SetAdminStatusRequest): Promise<AdminResponse> {

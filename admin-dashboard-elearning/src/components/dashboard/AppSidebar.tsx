@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   BookOpen,
@@ -33,10 +33,10 @@ import {
   useCourseInstructorsQuery,
   useCourseReviewSummaryQuery,
   useAdminMeQuery,
-  useLogoutMutation,
+  useAuth,
   usePermissions,
 } from "@/hooks/queries";
-import type { PeopleTab } from "@/routes/users";
+import type { AccessTab } from "@/routes/_authenticated/users";
 import { PERMISSIONS, type Permission, type SectionResponse } from "@/api";
 
 /**
@@ -53,21 +53,22 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   /** Omitted means everyone signed in may see it. */
   permission?: Permission;
+  /**
+   * Super-admin is not a permission code — it is whether one of your roles is
+   * the super role — so it cannot be expressed through `permission`.
+   */
+  superOnly?: boolean;
+  /** The access entries all share `/users` and are told apart by their view. */
+  search?: { view: AccessTab };
   badge?: string;
 }
 
 function SidebarAccount() {
   const { data: admin, isLoading } = useAdminMeQuery();
-  const logout = useLogoutMutation();
-  const navigate = useNavigate();
-
-  const signOut = () => {
-    logout.mutate(undefined, {
-      // onSettled, not onSuccess: the local session is dropped either way, so
-      // staying on the dashboard after a failed call would be the wrong result.
-      onSettled: () => navigate({ to: "/login" }),
-    });
-  };
+  // The provider drops the local session and navigates to sign-in whether or
+  // not the server accepted the call: staying on the dashboard because the
+  // backend was unreachable would be the wrong way to fail.
+  const { logout, isLoggingOut } = useAuth();
 
   if (isLoading || !admin) {
     return (
@@ -103,8 +104,8 @@ function SidebarAccount() {
       </div>
       <button
         type="button"
-        onClick={signOut}
-        disabled={logout.isPending}
+        onClick={() => void logout()}
+        disabled={isLoggingOut}
         title="Sign out"
         aria-label="Sign out"
         className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
@@ -238,10 +239,9 @@ export function AppSidebar() {
   const me = useAdminMeQuery();
   const isSuperAdmin = (me.data?.roles ?? []).some((r) => r.isSuper);
 
-  // The people workspace has the same shape as the course drill-down: one
-  // section at a time, chosen from the sidebar, held in the URL.
-  const isPeopleWorkspace = currentPath === "/users" || currentPath.startsWith("/users/");
-  const activePeopleTab = (search["view"] as PeopleTab | undefined) ?? "learners";
+  // /users normalises a missing view to "admins" in its own validateSearch, so
+  // this only fills the gap before that lands.
+  const activeAccessView = (search["view"] as AccessTab | undefined) ?? "admins";
 
   // Detect if currently in a drilled-down course context: /courses/:courseId
   const courseMatch = currentPath.match(/^\/courses\/([a-zA-Z0-9_-]+)/);
@@ -274,15 +274,56 @@ export function AppSidebar() {
       icon: BookOpen,
       permission: PERMISSIONS.COURSE_READ,
     },
-    // One entry, not two. Learners, instructors, administrators, roles and
-    // sessions are the same subject, and used to be answered in four unlinked
-    // places. Deliberately not gated on user.read: a super admin with no
-    // permission codes still belongs in here for roles and administrators.
+    /*
+     * Learners and instructors are pages, not views.
+     *
+     * They were briefly two views of one People workspace, back when a learner
+     * and an instructor were the same account row with a flag between them. They
+     * are separate kinds of account now — separate tables, and no way to turn
+     * one into the other — so the two lists can never contain the same person,
+     * and each gets its own route.
+     *
+     * The three below them are staff, not platform accounts, and stay together
+     * at `/users`: answering "who can do what in here" means an administrator,
+     * the role that gives them power, and the session they are using.
+     */
     {
-      id: "people",
-      title: "People",
-      url: "/users",
+      id: "learners",
+      title: "Learners",
+      url: "/students",
       icon: Users,
+      permission: PERMISSIONS.USER_READ,
+    },
+    {
+      id: "instructors",
+      title: "Instructors",
+      url: "/instructors",
+      icon: GraduationCap,
+      permission: PERMISSIONS.USER_READ,
+    },
+    {
+      id: "admins",
+      title: "Administrators",
+      url: "/users",
+      search: { view: "admins" },
+      icon: Shield,
+      superOnly: true,
+    },
+    {
+      id: "roles",
+      title: "Roles & permissions",
+      url: "/users",
+      search: { view: "roles" },
+      icon: KeyRound,
+      superOnly: true,
+    },
+    {
+      id: "sessions",
+      title: "Live sessions",
+      url: "/users",
+      search: { view: "sessions" },
+      icon: Radio,
+      permission: PERMISSIONS.SETTINGS_MANAGE,
     },
   ];
 
@@ -310,40 +351,40 @@ export function AppSidebar() {
   // Hiding a link an administrator cannot follow is courtesy; the server still
   // refuses the call. Until the token has been read, show everything rather
   // than flash a shrunken menu that then grows.
+  //
+  // Super-admin status arrives later than the rest: permissions are in the
+  // token and are known the moment it is read, but whether one of your roles is
+  // the super role takes a /me round trip. Showing those entries while that is
+  // in flight keeps the same direction of travel — the menu may settle smaller,
+  // never larger.
+  const superAdminKnown = !me.isLoading;
   const permitted = (items: NavItem[]) =>
-    isReady ? items.filter((i) => !i.permission || has(i.permission)) : items;
+    isReady
+      ? items.filter(
+          (i) =>
+            (!i.permission || has(i.permission)) &&
+            (!i.superOnly || !superAdminKnown || isSuperAdmin),
+        )
+      : items;
 
-  const isItemActive = (url: string) => {
-    if (url === "/") {
+  /**
+   * Spread rather than passed as `search={item.search}`: under
+   * `exactOptionalPropertyTypes` an explicit `undefined` is not the same as an
+   * absent prop, and Link refuses it.
+   */
+  const searchProp = (item: NavItem) => (item.search ? { search: item.search } : {});
+
+  const isItemActive = (item: NavItem) => {
+    // The three access entries all live at /users, so the path alone would
+    // light up all of them at once. Their view is what tells them apart.
+    if (item.search) {
+      return currentPath === "/users" && activeAccessView === item.search.view;
+    }
+    if (item.url === "/") {
       return currentPath === "/";
     }
-    return currentPath === url || currentPath.startsWith(url + "/");
+    return currentPath === item.url || currentPath.startsWith(item.url + "/");
   };
-
-  const peopleLinks: Array<{
-    id: PeopleTab;
-    title: string;
-    icon: React.ComponentType<{ className?: string }>;
-    /** Omitted means it is super-admin gated, which is not a permission code. */
-    permission?: Permission;
-    superOnly?: boolean;
-  }> = [
-    { id: "learners", title: "Learners", icon: Users, permission: PERMISSIONS.USER_READ },
-    {
-      id: "instructors",
-      title: "Instructors",
-      icon: GraduationCap,
-      permission: PERMISSIONS.USER_READ,
-    },
-    { id: "admins", title: "Administrators", icon: Shield, superOnly: true },
-    { id: "roles", title: "Roles & permissions", icon: KeyRound, superOnly: true },
-    {
-      id: "sessions",
-      title: "Live sessions",
-      icon: Radio,
-      permission: PERMISSIONS.SETTINGS_MANAGE,
-    },
-  ];
 
   const workspaceLinks: Array<{
     id: string;
@@ -399,83 +440,7 @@ export function AppSidebar() {
       )}
       style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
     >
-      {isPeopleWorkspace ? (
-        /* ========================================================================= */
-        /* People Workspace Contextual Navigation                                    */
-        /* ========================================================================= */
-        <div className="flex h-full min-h-0 w-full flex-col p-3.5">
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto sidebar-scroll">
-            <Link
-              to="/"
-              className="group flex cursor-pointer items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:-translate-x-1 rtl:group-hover:translate-x-1" />
-              <div className="min-w-0">
-                <span className="block truncate">Back to dashboard</span>
-                <span className="block text-[10px] font-normal text-muted-foreground">
-                  Leave people management
-                </span>
-              </div>
-            </Link>
-
-            <div className="space-y-2 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/30 p-3">
-              <span className="grid h-6 w-6 place-items-center rounded-lg bg-primary/15 text-primary">
-                <Users className="h-3.5 w-3.5" />
-              </span>
-              <div>
-                <h3 className="text-xs font-bold text-sidebar-foreground">People</h3>
-                <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Accounts &amp; access
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Manage
-              </div>
-              {peopleLinks.map((item) => {
-                // Sections this account cannot open are hidden rather than shown
-                // and refused — but only once the token has been read, so the
-                // menu does not visibly shrink a beat after loading.
-                if (isReady) {
-                  if (item.superOnly && !isSuperAdmin) return null;
-                  if (item.permission && !has(item.permission)) return null;
-                }
-                const isSelected = activePeopleTab === item.id;
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.id}
-                    to="/users"
-                    search={{ view: item.id }}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
-                      isSelected
-                        ? "bg-primary font-semibold text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="flex-1 truncate text-left rtl:text-right">{item.title}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-3 shrink-0 space-y-2 border-t border-sidebar-border/60 pt-3">
-            <Link
-              to="/settings"
-              className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            >
-              <Settings className="h-4 w-4 shrink-0" />
-              <span>Platform Settings</span>
-            </Link>
-            <SidebarAccount />
-          </div>
-        </div>
-      ) : isCourseDrilldown && courseId ? (
+      {isCourseDrilldown && courseId ? (
         /* ========================================================================= */
         /* Drill-Down Course Contextual Navigation                                  */
         /* ========================================================================= */
@@ -652,12 +617,13 @@ export function AppSidebar() {
                 {t("nav.learning")}
               </div>
               {permitted(main).map((item) => {
-                const active = isItemActive(item.url);
+                const active = isItemActive(item);
                 const Icon = item.icon;
                 return (
                   <Link
-                    key={item.url}
+                    key={item.id}
                     to={item.url}
+                    {...searchProp(item)}
                     className={cn(
                       "flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-150 cursor-pointer",
                       active
@@ -690,12 +656,13 @@ export function AppSidebar() {
                 {t("nav.insights")}
               </div>
               {permitted(insights).map((item) => {
-                const active = isItemActive(item.url);
+                const active = isItemActive(item);
                 const Icon = item.icon;
                 return (
                   <Link
-                    key={item.url}
+                    key={item.id}
                     to={item.url}
+                    {...searchProp(item)}
                     className={cn(
                       "flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-150 cursor-pointer",
                       active
@@ -715,12 +682,13 @@ export function AppSidebar() {
           <div className="mt-3 shrink-0 space-y-2 border-t border-sidebar-border/60 pt-3">
             <div className="space-y-1">
               {permitted(bottom).map((item) => {
-                const active = isItemActive(item.url);
+                const active = isItemActive(item);
                 const Icon = item.icon;
                 return (
                   <Link
-                    key={item.url}
+                    key={item.id}
                     to={item.url}
+                    {...searchProp(item)}
                     className={cn(
                       "flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-150 cursor-pointer",
                       active

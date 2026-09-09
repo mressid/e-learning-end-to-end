@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { GraduationCap, Plus, Search, X, Pencil, ShieldOff } from "lucide-react";
+import { GraduationCap, Plus, Search, X, Pencil } from "lucide-react";
 import {
   useAdminInstructorsQuery,
   useCreateUserMutation,
   useUpdateUserMutation,
+  useSetUserPasswordMutation,
   usePermissions,
 } from "@/hooks/queries";
 import { PERMISSIONS, parseApiError, type InstructorRosterEntry } from "@/api";
@@ -14,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SetPasswordSection } from "./SetPasswordSection";
 import type { PanelAddProps } from "./panel";
 import { toast } from "sonner";
 
@@ -90,13 +92,14 @@ export function InstructorsPanel({ onAdd }: PanelAddProps) {
         </div>
 
         {/*
-          The flag is what puts someone here, not their course count. That is
-          the difference from before: an instructor added this morning belongs
-          on this list even though they have not authored anything.
+          The kind of account is what puts someone here, not their course count:
+          an instructor added this morning belongs on this list even though they
+          have not authored anything.
         */}
         <p className="mt-3 text-xs text-muted-foreground">
-          Being an instructor means being allowed to author courses. It is not authority over any
-          particular course — that still comes from owning it or being added to it.
+          A separate kind of account from a learner, and not convertible either way — being one is
+          what allows authoring courses. It is not authority over any particular course; that still
+          comes from owning it or being added to it.
         </p>
 
         <div className="mt-4 overflow-x-auto">
@@ -135,8 +138,8 @@ export function InstructorsPanel({ onAdd }: PanelAddProps) {
                   {query
                     ? "Try a different search."
                     : canWrite
-                      ? "Add one, or anyone who authors a course appears here automatically."
-                      : "Anyone who authors a course appears here automatically."}
+                      ? "Add one. Nobody arrives here by authoring a course — it is the other way round."
+                      : "An administrator creates them; nobody becomes one by authoring a course."}
                 </p>
                 {query && (
                   <Button variant="outline" size="sm" className="mt-3" onClick={clearSearch}>
@@ -268,7 +271,7 @@ function AddInstructorSheet({ open, onClose }: { open: boolean; onClose: () => v
         password: form.password,
         firstName: form.firstName.trim() || null,
         lastName: form.lastName.trim() || null,
-        isInstructor: true,
+        type: "INSTRUCTOR",
       },
       {
         onSuccess: (created) => {
@@ -377,6 +380,11 @@ function EditInstructorSheet({
   const update = useUpdateUserMutation();
   const [error, setError] = useState("");
 
+  // Instructors are created by an administrator and may never have had a
+  // working inbox, so reset-by-email is not a route back in for them.
+  const setPassword = useSetUserPasswordMutation();
+  const [passwordError, setPasswordError] = useState("");
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!person?.id) return;
@@ -391,20 +399,6 @@ function EditInstructorSheet({
       {
         onSuccess: () => {
           toast.success("Instructor updated");
-          onClose();
-        },
-        onError: (err) => setError(parseApiError(err).message || "Could not save that."),
-      },
-    );
-  };
-
-  const revoke = () => {
-    if (!person?.id) return;
-    update.mutate(
-      { userId: person.id, isInstructor: false },
-      {
-        onSuccess: () => {
-          toast.success(`${person.username} can no longer author new courses`);
           onClose();
         },
         onError: (err) => setError(parseApiError(err).message || "Could not save that."),
@@ -441,28 +435,43 @@ function EditInstructorSheet({
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <div className="rounded-lg border border-dashed p-3">
-            <p className="text-sm font-medium">Remove instructor status</p>
-            {/* Stated because it is the question anyone hesitates over here. */}
-            <p className="mt-1 text-xs text-muted-foreground">
-              Stops them starting new courses. The {person.courseCount ?? 0} they already own stay
-              theirs and stay published — ownership is what confers authority over those, and this
-              does not touch it.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              disabled={update.isPending}
-              onClick={revoke}
-            >
-              <ShieldOff className="h-3.5 w-3.5" />
-              Remove status
-            </Button>
-          </div>
         </form>
+      )}
+
+      {person && (
+        <div className="mt-4 space-y-4">
+          <SetPasswordSection
+            key={person.id}
+            subject={person.displayName || person.username || ""}
+            pending={setPassword.isPending}
+            error={passwordError}
+            onSubmit={(newPassword) => {
+              if (!person.id) return;
+              const name = person.displayName || person.username;
+              setPasswordError("");
+              setPassword.mutate(
+                { userId: person.id, newPassword },
+                {
+                  onSuccess: () => toast.success(`New password set for ${name}. Pass it on.`),
+                  onError: (err) =>
+                    setPasswordError(parseApiError(err).message || "Could not set that password."),
+                },
+              );
+            }}
+          />
+
+          {/* Stated because "how do I undo this" is the question anyone asks
+              here, and the answer is no longer a button. */}
+          <div className="rounded-lg border border-dashed p-3">
+            <p className="text-sm font-medium">This account is an instructor permanently</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              There is no way to turn it into a learner account, here or anywhere. An instructor and
+              a learner are different kinds of account, decided when the account is made — someone
+              who wants to take courses as well registers as a learner separately. To stop this
+              person working, suspend the account.
+            </p>
+          </div>
+        </div>
       )}
     </FloatingDetailSheet>
   );

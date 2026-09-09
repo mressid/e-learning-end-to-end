@@ -16,7 +16,7 @@ export interface paths {
         put?: never;
         /**
          * Create an administrator
-         * @description The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove.
+         * @description The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove. Pass `roleIds` to give them their roles in the same transaction - an unknown role id rolls the whole thing back rather than leaving an account that exists and can do nothing.
          */
         post: operations["create_5"];
         delete?: never;
@@ -36,6 +36,26 @@ export interface paths {
         get: operations["get_7"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/admins/{adminId}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set an administrator's password
+         * @description For an administrator who has lost theirs. There is no reset-by-email on this side and never was, so a super admin sets a new password and hands it over the way the first one was handed over. Their sessions end. Refused on your own account - use `/admin/auth/me/password`, which asks for the current password so that a borrowed session cannot lock you out of your own.
+         */
+        post: operations["setPassword_1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -594,7 +614,7 @@ export interface paths {
         put?: never;
         /**
          * Create an account
-         * @description Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. Set `isInstructor` to let them author courses.
+         * @description Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. `type` decides whether this is a learner or an author, and cannot be changed later.
          */
         post: operations["create_3"];
         delete?: never;
@@ -622,9 +642,29 @@ export interface paths {
         head?: never;
         /**
          * Edit an account
-         * @description Requires `user.write`. Only the fields you send change. Clearing `isInstructor` stops them starting new courses; it does not touch the ones they already own, because ownership is what confers authority over those.
+         * @description Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.
          */
         patch: operations["update_3"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{userId}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a learner's or instructor's password
+         * @description Requires `user.write`. For when reset-by-email cannot work - an instructor whose address was never real, or a learner who no longer has the inbox. Self-service reset stays the normal route. Their sessions end, so a password that reached the wrong person stops working when it is replaced.
+         */
+        post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/users/{userId}/status": {
@@ -2617,6 +2657,8 @@ export interface components {
             email: string;
             /** @description Handed to the new administrator, who changes it themselves */
             password: string;
+            /** @description Roles to give them straight away. Omit or leave empty and the account is created holding no permissions at all, which is a working sign-in that can do nothing. */
+            roleIds?: string[];
             username: string;
         };
         CreateCategoryRequest: {
@@ -2685,11 +2727,15 @@ export interface components {
             /** Format: email */
             email: string;
             firstName?: string | null;
-            /** @description May author courses. Not authority over any particular course. */
-            isInstructor?: boolean;
             lastName?: string | null;
             /** @description A starting password. Nothing forces a change on first sign-in, so hand it over deliberately. */
             password: string;
+            /**
+             * @description Which kind of account to create. Permanent: there is no edit that turns one into the other, so someone who both learns and teaches holds two accounts. Only an INSTRUCTOR may own or co-instruct a course.
+             * @default STUDENT
+             * @enum {string}
+             */
+            type: "STUDENT" | "INSTRUCTOR";
             username: string;
         };
         DirectoryUserResponse: {
@@ -2699,10 +2745,14 @@ export interface components {
             email?: string;
             /** Format: uuid */
             id?: string;
-            isInstructor?: boolean;
             /** Format: date-time */
             lastLoginAt?: string | null;
             status?: string;
+            /**
+             * @description Which kind of account this is. Fixed at creation - there is no transition between the two.
+             * @enum {string}
+             */
+            type?: "STUDENT" | "INSTRUCTOR";
             username?: string;
         };
         DownloadUrlResponse: {
@@ -3340,6 +3390,10 @@ export interface components {
             /** @description Replaces the current set; an empty list clears it */
             prerequisiteIds?: string[];
         };
+        /** @description A replacement password, chosen by the administrator doing the reset and handed over out of band. Nothing forces a change on first sign-in, so hand it over deliberately. */
+        SetPasswordRequest: {
+            newPassword: string;
+        };
         SetRolePermissionsRequest: {
             permissions?: string[];
         };
@@ -3355,6 +3409,10 @@ export interface components {
         SetThumbnailRequest: {
             /** Format: uuid */
             mediaId?: string;
+        };
+        /** @description A replacement password, chosen by the administrator doing the reset and handed over out of band. Nothing forces a change on first sign-in. */
+        SetUserPasswordRequest: {
+            newPassword: string;
         };
         SetUserStatusRequest: {
             /** @enum {string} */
@@ -3472,13 +3530,11 @@ export interface components {
             lastName?: string | null;
             timezone?: string | null;
         };
-        /** @description Every field optional; only what is sent changes */
+        /** @description Every field optional; only what is sent changes. The kind of account is not editable - create the other kind instead. */
         UpdateUserRequest: {
             /** Format: email */
             email?: string | null;
             firstName?: string | null;
-            /** @description Clearing this does not touch courses they already own */
-            isInstructor?: boolean | null;
             lastName?: string | null;
             username?: string | null;
         };
@@ -3598,6 +3654,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminResponse"];
                 };
+            };
+        };
+    };
+    setPassword_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adminId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4394,6 +4474,32 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryUserResponse"];
+                };
+            };
+        };
+    };
+    setPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUserPasswordRequest"];
             };
         };
         responses: {

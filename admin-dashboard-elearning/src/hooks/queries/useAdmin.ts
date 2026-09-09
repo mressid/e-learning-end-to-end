@@ -73,6 +73,24 @@ export function useSetUserStatusMutation() {
   });
 }
 
+/**
+ * Setting a learner's or instructor's password on their behalf.
+ *
+ * Nothing is cached about a password, but their sessions are now gone, so the
+ * live-sessions list is stale.
+ */
+export function useSetUserPasswordMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, newPassword }: { userId: string; newPassword: string }) =>
+      adminDirectoryApi.setUserPassword(userId, { newPassword }),
+    onSuccess: (updated, { userId }) => {
+      queryClient.setQueryData(queryKeys.admin.users.detail(userId), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.sessions.all });
+    },
+  });
+}
+
 export function useCreateUserMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -94,7 +112,8 @@ export function useUpdateUserMutation() {
     onSuccess: (updated, { userId }) => {
       queryClient.setQueryData(queryKeys.admin.users.detail(userId), updated);
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.users.all });
-      // Promoting or demoting changes who is on the roster.
+      // An instructor's name or address is rendered on the roster too, so it
+      // goes stale even though the roster's membership cannot change here.
       queryClient.invalidateQueries({ queryKey: ["admin", "instructors"] });
     },
   });
@@ -247,6 +266,22 @@ export function useCreateAdminMutation() {
   return useMutation({
     mutationFn: adminAccessApi.createAdmin,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin.admins.all }),
+  });
+}
+
+/**
+ * Setting another administrator's password, because they have lost it.
+ *
+ * The server refuses this on your own account — `/admin/auth/me/password` is
+ * the route for that, and it asks for the current password so that a borrowed
+ * session cannot lock you out of your own.
+ */
+export function useSetAdminPasswordMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ adminId, newPassword }: { adminId: string; newPassword: string }) =>
+      adminAccessApi.setAdminPassword(adminId, { newPassword }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin.sessions.all }),
   });
 }
 

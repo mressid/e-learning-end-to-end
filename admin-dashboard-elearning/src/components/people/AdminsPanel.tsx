@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Pencil } from "lucide-react";
 import {
   useRolesQuery,
   usePermissionCatalogueQuery,
@@ -9,9 +10,10 @@ import {
   useCreateAdminMutation,
   useSetAdminRoleMutation,
   useSetAdminStatusMutation,
+  useSetAdminPasswordMutation,
   useAdminMeQuery,
 } from "@/hooks/queries";
-import { parseApiError, type RoleResponse } from "@/api";
+import { parseApiError, type AdminResponse, type RoleResponse } from "@/api";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FloatingDetailSheet } from "@/components/dashboard/FloatingDetailSheet";
+import { SetPasswordSection } from "./SetPasswordSection";
 import type { PanelAddProps } from "./panel";
 import { toast } from "sonner";
 
@@ -51,7 +54,10 @@ export function AdminsPanel({ onAdd }: PanelAddProps) {
   const me = useAdminMeQuery();
   const createAdmin = useCreateAdminMutation();
   const setRole = useSetAdminRoleMutation();
-  const setStatus = useSetAdminStatusMutation();
+
+  // The administrator whose sheet is open, if any. The row itself rather than an
+  // id, so the sheet can name them — acting on the wrong account is silent.
+  const [managing, setManaging] = useState<AdminResponse | null>(null);
 
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ username: "", email: "", password: "" });
@@ -92,7 +98,6 @@ export function AdminsPanel({ onAdd }: PanelAddProps) {
         {admins.data?.content?.map((admin) => {
           const heldRoles = new Set((admin.roles ?? []).map((r) => r.id));
           const isSelf = admin.id === me.data?.id;
-          const suspended = admin.status !== "ACTIVE";
 
           return (
             <div key={admin.id} className="rounded-xl border p-4">
@@ -110,29 +115,20 @@ export function AdminsPanel({ onAdd }: PanelAddProps) {
                   <p className="mt-0.5 text-xs text-muted-foreground">{admin.email}</p>
                 </div>
 
-                {/* No self-suspension: locking yourself out of the only account
-                    that can unlock accounts is not a recoverable mistake. */}
+                {/* Nothing to manage on your own account. Suspending yourself
+                    locks the platform's only unlocker out, and setting your own
+                    password here would skip the current-password check that
+                    stops a borrowed session locking you out. The server refuses
+                    both regardless; this only avoids offering them.
+
+                    Roles stay on the row below because granting one is a quick,
+                    reversible thing you do while comparing people. Suspending
+                    and replacing a password are neither, so they moved into the
+                    sheet, where you have opened the account and looked at it. */}
                 {!isSelf && admin.id && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={setStatus.isPending}
-                    onClick={() =>
-                      setStatus.mutate(
-                        { adminId: admin.id!, status: suspended ? "ACTIVE" : "SUSPENDED" },
-                        {
-                          onSuccess: () =>
-                            toast.success(
-                              suspended
-                                ? `${admin.username} reinstated`
-                                : `${admin.username} suspended`,
-                            ),
-                          onError: (err) => fail(err, "Could not change that account."),
-                        },
-                      )
-                    }
-                  >
-                    {suspended ? "Reinstate" : "Suspend"}
+                  <Button variant="ghost" size="sm" onClick={() => setManaging(admin)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    <span className="sr-only sm:not-sr-only">Manage</span>
                   </Button>
                 )}
               </div>
@@ -175,6 +171,8 @@ export function AdminsPanel({ onAdd }: PanelAddProps) {
           );
         })}
       </div>
+
+      <ManageAdminSheet admin={managing} onClose={() => setManaging(null)} />
 
       <FloatingDetailSheet
         open={creating}
@@ -233,5 +231,99 @@ export function AdminsPanel({ onAdd }: PanelAddProps) {
         </form>
       </FloatingDetailSheet>
     </div>
+  );
+}
+
+/**
+ * One administrator, and the things you do to them deliberately.
+ *
+ * Suspending an account and replacing its password are both rare and both hard
+ * to take back, so neither belongs on a row you are scanning past. Granting a
+ * role is the opposite — quick, reversible, and something you do while comparing
+ * people — so it stays on the row.
+ *
+ * Never opened for your own account: the panel does not offer it, and the server
+ * refuses both operations on yourself regardless.
+ */
+function ManageAdminSheet({
+  admin,
+  onClose,
+}: {
+  admin: AdminResponse | null;
+  onClose: () => void;
+}) {
+  const setStatus = useSetAdminStatusMutation();
+  const setPassword = useSetAdminPasswordMutation();
+  const [passwordError, setPasswordError] = useState("");
+
+  const name = admin?.username || admin?.email || "";
+  const suspended = admin ? admin.status !== "ACTIVE" : false;
+
+  return (
+    <FloatingDetailSheet
+      open={admin !== null}
+      onOpenChange={(next) => !next && onClose()}
+      title={admin ? `Manage ${name}` : "Manage"}
+      description={admin?.email}
+      footerActions={
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      {admin?.id && (
+        <div className="space-y-4">
+          <SetPasswordSection
+            key={admin.id}
+            subject={name}
+            pending={setPassword.isPending}
+            error={passwordError}
+            onSubmit={(newPassword) => {
+              setPasswordError("");
+              setPassword.mutate(
+                { adminId: admin.id!, newPassword },
+                {
+                  onSuccess: () => toast.success(`New password set for ${name}. Pass it on.`),
+                  onError: (err) =>
+                    setPasswordError(parseApiError(err).message || "Could not set that password."),
+                },
+              );
+            }}
+          />
+
+          <div className="rounded-lg border border-dashed p-3">
+            <p className="text-sm font-medium">
+              {suspended ? "This account is suspended" : "Account access"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {suspended
+                ? "They cannot sign in. Reinstating restores exactly the roles they held."
+                : "Suspending ends their sessions and stops them signing in. Their roles are kept, so reinstating restores what they had."}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              disabled={setStatus.isPending}
+              onClick={() =>
+                setStatus.mutate(
+                  { adminId: admin.id!, status: suspended ? "ACTIVE" : "SUSPENDED" },
+                  {
+                    onSuccess: () => {
+                      toast.success(suspended ? `${name} reinstated` : `${name} suspended`);
+                      onClose();
+                    },
+                    onError: (err) => fail(err, "Could not change that account."),
+                  },
+                )
+              }
+            >
+              {suspended ? "Reinstate" : "Suspend"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </FloatingDetailSheet>
   );
 }

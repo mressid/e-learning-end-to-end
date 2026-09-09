@@ -5,6 +5,7 @@ import type {
   InstructorRosterEntry,
   PageResponse,
   SetUserStatusRequest,
+  SetUserPasswordRequest,
   UpdateUserRequest,
 } from "../types";
 
@@ -27,17 +28,21 @@ export interface InstructorListParams extends PageParams {
 /**
  * Learners and instructors, as an administrator sees them.
  *
- * An instructor is an account with the `isInstructor` flag, which is what lets
- * them author courses. It is *not* authority over any particular course — that
- * is still ownership or co-instructorship — so the flag only answers "may this
- * person start one", which no relationship can express.
+ * They are two kinds of account, not one account with a flag: `listUsers` never
+ * returns an instructor and `listInstructors` never returns a learner. Which
+ * kind an account is, is chosen by `createUser` and cannot be changed — there is
+ * no promote or demote, here or on the server.
+ *
+ * Being an instructor is what allows authoring. It is *not* authority over any
+ * particular course — that is still ownership or co-instructorship — so it only
+ * answers "may this person start one", which no relationship can express.
  *
  * Creating and editing goes through `/admin/users`, because the row belongs to
  * identity; the roster is served from `/admin/instructors`, because the course
  * counts on it belong to courses.
  */
 export const adminDirectoryApi = {
-  /** Requires `user.read`. */
+  /** Requires `user.read`. Learners only — instructors are their own roster. */
   async listUsers(params?: UserListParams): Promise<PageResponse<DirectoryUserResponse>> {
     const { data, error } = await apiClient.GET("/api/v1/admin/users", {
       params: { query: params ?? {} },
@@ -66,18 +71,37 @@ export const adminDirectoryApi = {
     return data;
   },
 
-  /** Requires `user.write`. The account is ACTIVE at once — there is no
-   *  confirmation email, so hand the starting password over deliberately. */
+  /** Requires `user.write`. `type` decides learner or instructor and is
+   *  permanent. The account is ACTIVE at once — there is no confirmation email,
+   *  so hand the starting password over deliberately. */
   async createUser(body: CreateUserRequest): Promise<DirectoryUserResponse> {
     const { data, error } = await apiClient.POST("/api/v1/admin/users", { body });
     if (error || !data) throw parseApiError(error);
     return data;
   },
 
-  /** Requires `user.write`. Only the fields sent change. Clearing
-   *  `isInstructor` does not touch courses they already own. */
+  /** Requires `user.write`. Only the fields sent change. The kind of account is
+   *  not among them: it is fixed when the account is created. */
   async updateUser(userId: string, body: UpdateUserRequest): Promise<DirectoryUserResponse> {
     const { data, error } = await apiClient.PATCH("/api/v1/admin/users/{userId}", {
+      params: { path: { userId } },
+      body,
+    });
+    if (error || !data) throw parseApiError(error);
+    return data;
+  },
+
+  /**
+   * Requires `user.write`. For when reset-by-email cannot work — an instructor
+   * whose address was never real, or a learner who no longer has the inbox.
+   * Their sessions end, so a password that reached the wrong person stops
+   * working the moment it is replaced.
+   */
+  async setUserPassword(
+    userId: string,
+    body: SetUserPasswordRequest,
+  ): Promise<DirectoryUserResponse> {
+    const { data, error } = await apiClient.POST("/api/v1/admin/users/{userId}/password", {
       params: { path: { userId } },
       body,
     });

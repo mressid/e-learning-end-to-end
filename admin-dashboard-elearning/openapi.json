@@ -10,7 +10,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8082",
+      "url": "http://localhost:8081",
       "description": "Generated server url"
     }
   ],
@@ -188,7 +188,7 @@
         ]
       },
       "post": {
-        "description": "The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove.",
+        "description": "The password is handed over out of band and the new administrator changes it themselves. There is no verification email: a colleague creating the account already establishes what verification would prove. Pass `roleIds` to give them their roles in the same transaction - an unknown role id rolls the whole thing back rather than leaving an account that exists and can do nothing.",
         "operationId": "create_5",
         "requestBody": {
           "content": {
@@ -255,6 +255,47 @@
           }
         ],
         "summary": "One administrator, with their roles",
+        "tags": [
+          "Administrators"
+        ]
+      }
+    },
+    "/api/v1/admin/admins/{adminId}/password": {
+      "post": {
+        "description": "For an administrator who has lost theirs. There is no reset-by-email on this side and never was, so a super admin sets a new password and hands it over the way the first one was handed over. Their sessions end. Refused on your own account - use `/admin/auth/me/password`, which asks for the current password so that a borrowed session cannot lock you out of your own.",
+        "operationId": "setPassword_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adminId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set an administrator's password",
         "tags": [
           "Administrators"
         ]
@@ -1638,7 +1679,7 @@
         ]
       },
       "post": {
-        "description": "Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. Set `isInstructor` to let them author courses.",
+        "description": "Requires `user.write`. ACTIVE immediately - an administrator typing the address is the verification, so there is no email to wait for. `type` decides whether this is a learner or an author, and cannot be changed later.",
         "operationId": "create_3",
         "requestBody": {
           "content": {
@@ -1721,7 +1762,7 @@
         ]
       },
       "patch": {
-        "description": "Requires `user.write`. Only the fields you send change. Clearing `isInstructor` stops them starting new courses; it does not touch the ones they already own, because ownership is what confers authority over those.",
+        "description": "Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.",
         "operationId": "update_3",
         "parameters": [
           {
@@ -1762,6 +1803,54 @@
           }
         ],
         "summary": "Edit an account",
+        "tags": [
+          "Admin: users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{userId}/password": {
+      "post": {
+        "description": "Requires `user.write`. For when reset-by-email cannot work - an instructor whose address was never real, or a learner who no longer has the inbox. Self-service reset stays the normal route. Their sessions end, so a password that reached the wrong person stops working when it is replaced.",
+        "operationId": "setPassword",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryUserResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set a learner's or instructor's password",
         "tags": [
           "Admin: users"
         ]
@@ -7101,6 +7190,14 @@
             "maxLength": 128,
             "minLength": 12
           },
+          "roleIds": {
+            "type": "array",
+            "description": "Roles to give them straight away. Omit or leave empty and the account is created holding no permissions at all, which is a working sign-in that can do nothing.",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "username": {
             "type": "string",
             "maxLength": 64,
@@ -7375,10 +7472,6 @@
               "null"
             ]
           },
-          "isInstructor": {
-            "type": "boolean",
-            "description": "May author courses. Not authority over any particular course."
-          },
           "lastName": {
             "type": [
               "string",
@@ -7390,6 +7483,15 @@
             "description": "A starting password. Nothing forces a change on first sign-in, so hand it over deliberately.",
             "maxLength": 128,
             "minLength": 12
+          },
+          "type": {
+            "type": "string",
+            "default": "STUDENT",
+            "description": "Which kind of account to create. Permanent: there is no edit that turns one into the other, so someone who both learns and teaches holds two accounts. Only an INSTRUCTOR may own or co-instruct a course.",
+            "enum": [
+              "STUDENT",
+              "INSTRUCTOR"
+            ]
           },
           "username": {
             "type": "string",
@@ -7423,9 +7525,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "isInstructor": {
-            "type": "boolean"
-          },
           "lastLoginAt": {
             "type": [
               "string",
@@ -7435,6 +7534,14 @@
           },
           "status": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "Which kind of account this is. Fixed at creation - there is no transition between the two.",
+            "enum": [
+              "STUDENT",
+              "INSTRUCTOR"
+            ]
           },
           "username": {
             "type": "string"
@@ -9092,6 +9199,20 @@
           }
         }
       },
+      "SetPasswordRequest": {
+        "type": "object",
+        "description": "A replacement password, chosen by the administrator doing the reset and handed over out of band. Nothing forces a change on first sign-in, so hand it over deliberately.",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
       "SetRolePermissionsRequest": {
         "type": "object",
         "properties": {
@@ -9128,6 +9249,20 @@
             "format": "uuid"
           }
         }
+      },
+      "SetUserPasswordRequest": {
+        "type": "object",
+        "description": "A replacement password, chosen by the administrator doing the reset and handed over out of band. Nothing forces a change on first sign-in.",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
       },
       "SetUserStatusRequest": {
         "type": "object",
@@ -9495,7 +9630,7 @@
       },
       "UpdateUserRequest": {
         "type": "object",
-        "description": "Every field optional; only what is sent changes",
+        "description": "Every field optional; only what is sent changes. The kind of account is not editable - create the other kind instead.",
         "properties": {
           "email": {
             "type": [
@@ -9509,13 +9644,6 @@
               "string",
               "null"
             ]
-          },
-          "isInstructor": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "Clearing this does not touch courses they already own"
           },
           "lastName": {
             "type": [

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Search, ShieldOff, ShieldCheck, LogOut, Users, X, GraduationCap } from "lucide-react";
+import { Search, ShieldOff, ShieldCheck, LogOut, Users, X } from "lucide-react";
 import {
   useAdminUsersQuery,
   useSetUserStatusMutation,
-  useUpdateUserMutation,
   useRevokeAllUserSessionsMutation,
   usePermissions,
   type AccountStatus,
@@ -49,8 +48,6 @@ export function LearnersPanel() {
 
   const setStatusMutation = useSetUserStatusMutation();
   const revokeSessions = useRevokeAllUserSessionsMutation();
-  const updateUser = useUpdateUserMutation();
-  const canWrite = has(PERMISSIONS.USER_WRITE);
 
   // Search is submitted rather than typed-through: each keystroke would be a
   // new server query and a new cache entry.
@@ -76,24 +73,6 @@ export function LearnersPanel() {
             next === "ACTIVE"
               ? `${user.username} reinstated`
               : `${user.username} ${next.toLowerCase()}`,
-          ),
-        onError: (err) => toast.error(parseApiError(err).message || "That did not work."),
-      },
-    );
-  };
-
-  // Promoting from here rather than only from /instructors: this is the page
-  // you are on when someone asks to start teaching.
-  const setInstructor = (user: DirectoryUserResponse, next: boolean) => {
-    if (!user.id) return;
-    updateUser.mutate(
-      { userId: user.id, isInstructor: next },
-      {
-        onSuccess: () =>
-          toast.success(
-            next
-              ? `${user.username} can now author courses`
-              : `${user.username} can no longer author new courses`,
           ),
         onError: (err) => toast.error(parseApiError(err).message || "That did not work."),
       },
@@ -182,15 +161,9 @@ export function LearnersPanel() {
                     user={user}
                     canSuspend={canSuspend}
                     canManageSessions={canManageSessions}
-                    canWrite={canWrite}
-                    busy={
-                      setStatusMutation.isPending ||
-                      revokeSessions.isPending ||
-                      updateUser.isPending
-                    }
+                    busy={setStatusMutation.isPending || revokeSessions.isPending}
                     onChangeStatus={changeStatus}
                     onSignOut={signOutEverywhere}
-                    onSetInstructor={setInstructor}
                   />
                 ))}
               </tbody>
@@ -216,20 +189,16 @@ function UserRow({
   user,
   canSuspend,
   canManageSessions,
-  canWrite,
   busy,
   onChangeStatus,
   onSignOut,
-  onSetInstructor,
 }: {
   user: DirectoryUserResponse;
   canSuspend: boolean;
   canManageSessions: boolean;
-  canWrite: boolean;
   busy: boolean;
   onChangeStatus: (user: DirectoryUserResponse, next: AccountStatus) => void;
   onSignOut: (user: DirectoryUserResponse) => void;
-  onSetInstructor: (user: DirectoryUserResponse, next: boolean) => void;
 }) {
   const suspended = user.status !== "ACTIVE";
 
@@ -252,15 +221,6 @@ function UserRow({
       <td className="py-2.5 pr-3">
         <div className="flex items-center gap-1.5">
           <StatusBadge status={user.status} />
-          {user.isInstructor && (
-            <span
-              title="May author courses"
-              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
-            >
-              <GraduationCap className="h-3 w-3" />
-              Instructor
-            </span>
-          )}
         </div>
       </td>
       <td className="py-2.5 pr-3 text-xs text-muted-foreground">{formatDate(user.createdAt)}</td>
@@ -269,24 +229,6 @@ function UserRow({
       </td>
       <td className="py-2.5 text-right rtl:text-left">
         <div className="flex justify-end gap-1.5 rtl:justify-start">
-          {canWrite && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => onSetInstructor(user, !user.isInstructor)}
-              title={
-                user.isInstructor
-                  ? "Stop them starting new courses. Courses they already own stay theirs."
-                  : "Let this person author courses"
-              }
-            >
-              <GraduationCap className="h-3.5 w-3.5" />
-              <span className="sr-only sm:not-sr-only">
-                {user.isInstructor ? "Un-instructor" : "Make instructor"}
-              </span>
-            </Button>
-          )}
           {canManageSessions && (
             <Button
               variant="ghost"

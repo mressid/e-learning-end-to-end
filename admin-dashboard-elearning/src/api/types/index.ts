@@ -111,6 +111,7 @@ export type AdminTokenResponse = Schemas["AdminTokenResponse"];
 export type AdminResponse = Schemas["AdminResponse"];
 export type CreateAdminRequest = Schemas["CreateAdminRequest"];
 export type SetAdminStatusRequest = Schemas["SetAdminStatusRequest"];
+export type SetPasswordRequest = Schemas["SetPasswordRequest"];
 export type ChangePasswordRequest = Schemas["ChangePasswordRequest"];
 
 // Roles & permissions. Roles are configurable; the super admin holds every
@@ -124,6 +125,7 @@ export type SetRolePermissionsRequest = Schemas["SetRolePermissionsRequest"];
 // User & content administration
 export type DirectoryUserResponse = Schemas["DirectoryUserResponse"];
 export type SetUserStatusRequest = Schemas["SetUserStatusRequest"];
+export type SetUserPasswordRequest = Schemas["SetUserPasswordRequest"];
 export type CreateUserRequest = Schemas["CreateUserRequest"];
 export type UpdateUserRequest = Schemas["UpdateUserRequest"];
 export type AdminCertificateResponse = Schemas["AdminCertificateResponse"];
