@@ -49,10 +49,10 @@ export type SourceType = NonNullable<CreateResourceRequest["sourceType"]>;
 export type RelationshipType = NonNullable<AttachResourceRequest["relationshipType"]>;
 /** Lessons, quizzes and assignments share one ordered sequence. */
 export type CourseItemType = NonNullable<CreateCourseItemRequest["type"]>;
-/** How a lesson carries its content. */
-export type LessonContentType = NonNullable<SaveLessonRequest["contentType"]>;
 /** When a lesson counts as done. */
 export type LessonCompletionRule = NonNullable<SaveLessonRequest["completionRule"]>;
+/** How the text of an INLINE lesson is written. */
+export type LessonContentFormat = NonNullable<SaveLessonRequest["contentFormat"]>;
 
 /**
  * One page of anything.

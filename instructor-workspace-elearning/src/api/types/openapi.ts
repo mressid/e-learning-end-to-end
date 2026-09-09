@@ -2840,9 +2840,9 @@ export interface components {
         };
         LessonResponse: {
             completionRule?: string;
-            /** @description Body of an ARTICLE lesson */
+            /** @description Body of an INLINE lesson */
             content?: string | null;
-            contentType?: string;
+            contentFormat?: string | null;
             /** Format: uuid */
             courseItemId?: string;
             description?: string | null;
@@ -2850,6 +2850,11 @@ export interface components {
             durationSeconds?: number | null;
             /** @description Whether a file is attached; fetch it from /content-url */
             hasFile?: boolean;
+            resourceType?: string;
+            sourceType?: string;
+            title?: string;
+            /** @description Target of a URL lesson */
+            url?: string | null;
         };
         LoginRequest: {
             /** Format: email */
@@ -3335,26 +3340,41 @@ export interface components {
             maxScore?: number;
         };
         /**
-         * @description Content fields depend on contentType: ARTICLE needs `content`,
-         *             VIDEO and DOCUMENT need `mediaId` of a completed upload.
+         * @description What the lesson teaches with is described by two independent fields.
+         *             `resourceType` is what the material is; `sourceType` is where it lives,
+         *             and decides which content field is required: FILE needs `mediaId` -
+         *             except when replacing nothing, where the file already attached is kept -
+         *             URL needs `url`, INLINE needs `content`.
          */
         SaveLessonRequest: {
             /** @enum {string|null} */
             completionRule?: "MANUAL" | "VIEW" | "PERCENTAGE" | "DURATION" | null;
-            /** @description Markdown or HTML body, for ARTICLE lessons */
+            /** @description The body, for an INLINE lesson */
             content?: string | null;
-            /** @enum {string} */
-            contentType?: "VIDEO" | "ARTICLE" | "DOCUMENT" | "AUDIO" | "EXTERNAL";
+            /**
+             * @description How to read `content`; defaults to MARKDOWN
+             * @enum {string|null}
+             */
+            contentFormat?: "MARKDOWN" | "HTML" | "PLAIN_TEXT" | null;
             description?: string | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description How long the author says it takes, not how long the file runs
+             */
             durationSeconds?: number | null;
             /**
              * Format: uuid
-             * @description A completed media upload, for VIDEO and DOCUMENT lessons
+             * @description A completed media upload, for a FILE lesson
              */
             mediaId?: string | null;
-            /** Format: uuid */
-            thumbnailMediaId?: string | null;
+            /** @enum {string} */
+            resourceType?: "DOCUMENT" | "SOURCE_CODE" | "VIDEO" | "AUDIO" | "IMAGE" | "LINK" | "OTHER";
+            /** @enum {string} */
+            sourceType?: "FILE" | "URL" | "INLINE";
+            /** @description Names the material in the library; usually the item's own title */
+            title: string;
+            /** @description Where it lives, for a URL lesson. http and https only */
+            url?: string | null;
         };
         SaveQuizRequest: {
             instructions?: string | null;
@@ -6057,7 +6077,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Content missing for the chosen type, or the upload is not complete */
+            /** @description Content missing for the chosen source, or the upload is not complete */
             422: {
                 headers: {
                     [name: string]: unknown;

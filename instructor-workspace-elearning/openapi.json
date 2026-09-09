@@ -4337,7 +4337,7 @@
                 }
               }
             },
-            "description": "Content missing for the chosen type, or the upload is not complete"
+            "description": "Content missing for the chosen source, or the upload is not complete"
           }
         },
         "security": [
@@ -7877,10 +7877,13 @@
               "string",
               "null"
             ],
-            "description": "Body of an ARTICLE lesson"
+            "description": "Body of an INLINE lesson"
           },
-          "contentType": {
-            "type": "string"
+          "contentFormat": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "courseItemId": {
             "type": "string",
@@ -7902,6 +7905,22 @@
           "hasFile": {
             "type": "boolean",
             "description": "Whether a file is attached; fetch it from /content-url"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target of a URL lesson"
           }
         }
       },
@@ -9136,7 +9155,7 @@
       },
       "SaveLessonRequest": {
         "type": "object",
-        "description": "\n        Content fields depend on contentType: ARTICLE needs `content`,\n        VIDEO and DOCUMENT need `mediaId` of a completed upload.\n    ",
+        "description": "\n        What the lesson teaches with is described by two independent fields.\n        `resourceType` is what the material is; `sourceType` is where it lives,\n        and decides which content field is required: FILE needs `mediaId` -\n        except when replacing nothing, where the file already attached is kept -\n        URL needs `url`, INLINE needs `content`.\n    ",
         "properties": {
           "completionRule": {
             "type": [
@@ -9155,16 +9174,18 @@
               "string",
               "null"
             ],
-            "description": "Markdown or HTML body, for ARTICLE lessons"
+            "description": "The body, for an INLINE lesson"
           },
-          "contentType": {
-            "type": "string",
+          "contentFormat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How to read `content`; defaults to MARKDOWN",
             "enum": [
-              "VIDEO",
-              "ARTICLE",
-              "DOCUMENT",
-              "AUDIO",
-              "EXTERNAL"
+              "MARKDOWN",
+              "HTML",
+              "PLAIN_TEXT"
             ]
           },
           "description": {
@@ -9181,6 +9202,7 @@
               "null"
             ],
             "format": "int32",
+            "description": "How long the author says it takes, not how long the file runs",
             "minimum": 0
           },
           "mediaId": {
@@ -9189,16 +9211,45 @@
               "null"
             ],
             "format": "uuid",
-            "description": "A completed media upload, for VIDEO and DOCUMENT lessons"
+            "description": "A completed media upload, for a FILE lesson"
           },
-          "thumbnailMediaId": {
+          "resourceType": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "SOURCE_CODE",
+              "VIDEO",
+              "AUDIO",
+              "IMAGE",
+              "LINK",
+              "OTHER"
+            ]
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "FILE",
+              "URL",
+              "INLINE"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Names the material in the library; usually the item's own title",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "url": {
             "type": [
               "string",
               "null"
             ],
-            "format": "uuid"
+            "description": "Where it lives, for a URL lesson. http and https only"
           }
-        }
+        },
+        "required": [
+          "title"
+        ]
       },
       "SaveQuizRequest": {
         "type": "object",

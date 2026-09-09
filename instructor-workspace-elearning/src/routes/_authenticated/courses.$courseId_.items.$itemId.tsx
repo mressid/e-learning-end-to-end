@@ -9,9 +9,11 @@ import {
   mediaApi,
   parseApiError,
   type LessonCompletionRule,
-  type LessonContentType,
+  type LessonContentFormat,
   type LessonResponse,
+  type ResourceType,
   type SaveLessonRequest,
+  type SourceType,
 } from "@/api";
 import { MarkdownEditor } from "@/components/workspace/MarkdownEditor";
 import { ResourcePanel } from "@/components/workspace/ResourcePanel";
@@ -43,26 +45,62 @@ import { cn } from "@/lib/utils";
 const FORM_ID = "lesson-page-form";
 
 /**
- * The three kinds of lesson the platform can actually store.
+ * What the material is, and where it lives — two questions, two controls.
  *
- * `AUDIO` and `EXTERNAL` are in the API's enum but have no content table
- * behind them, so the server refuses them with CONTENT_TYPE_NOT_SUPPORTED.
- * Offering them here would be offering a choice that cannot be saved, so they
- * are named below the control instead of listed inside it.
+ * They used to be one list, which is why it had entries that could not be
+ * saved: "written" is a kind of thing and "external" is a place a thing lives,
+ * and neither answer told the platform the other half. Audio lessons and links
+ * work now because the question they needed answered is finally being asked.
  */
-const CONTENT_TYPES: LessonContentType[] = ["ARTICLE", "VIDEO", "DOCUMENT"];
+const RESOURCE_TYPES: ResourceType[] = [
+  "DOCUMENT",
+  "VIDEO",
+  "AUDIO",
+  "IMAGE",
+  "SOURCE_CODE",
+  "LINK",
+  "OTHER",
+];
 
-/** The kinds whose body is an uploaded file rather than typed text. */
-const FILE_BACKED: LessonContentType[] = ["VIDEO", "DOCUMENT"];
-
-const DELIVERY: Record<string, { label: string; hint: string }> = {
-  ARTICLE: { label: "Written", hint: "Written here, in the editor below." },
-  VIDEO: {
-    label: "Video",
-    hint: "A video you upload. It is encoded for streaming after it lands.",
-  },
-  DOCUMENT: { label: "Document", hint: "A file to read — a PDF, slides, a worksheet." },
+const KIND: Record<string, string> = {
+  DOCUMENT: "Document",
+  VIDEO: "Video",
+  AUDIO: "Audio",
+  IMAGE: "Image",
+  SOURCE_CODE: "Source code",
+  LINK: "Link",
+  OTHER: "Something else",
 };
+
+const SOURCE_TYPES: SourceType[] = ["INLINE", "FILE", "URL"];
+
+const WHERE: Record<string, { label: string; hint: string }> = {
+  INLINE: { label: "Written here", hint: "Typed below and stored as text." },
+  FILE: {
+    label: "A file you upload",
+    hint: "Uploaded straight to storage; the bytes never pass through the API.",
+  },
+  URL: {
+    label: "A link",
+    hint: "Somewhere else entirely. The platform stores the reference, not the content.",
+  },
+};
+
+const FORMATS: LessonContentFormat[] = ["MARKDOWN", "HTML", "PLAIN_TEXT"];
+
+const FORMAT_LABEL: Record<string, string> = {
+  MARKDOWN: "Markdown",
+  HTML: "HTML",
+  PLAIN_TEXT: "Plain text",
+};
+
+/** Narrows the file picker where the kind makes it obvious. */
+function acceptFor(resourceType: ResourceType): string | undefined {
+  if (resourceType === "VIDEO") return "video/*";
+  if (resourceType === "AUDIO") return "audio/*";
+  if (resourceType === "IMAGE") return "image/*";
+  return undefined;
+}
 
 const COMPLETION_RULES: LessonCompletionRule[] = ["MANUAL", "VIEW", "DURATION", "PERCENTAGE"];
 
@@ -212,9 +250,16 @@ function LessonEditor({
 }) {
   const save = useSaveLessonMutation(courseId);
 
-  const [contentType, setContentType] = useState<LessonContentType>(
-    (lesson?.contentType as LessonContentType | undefined) ?? "ARTICLE",
+  const [resourceType, setResourceType] = useState<ResourceType>(
+    (lesson?.resourceType as ResourceType | undefined) ?? "DOCUMENT",
   );
+  const [sourceType, setSourceType] = useState<SourceType>(
+    (lesson?.sourceType as SourceType | undefined) ?? "INLINE",
+  );
+  const [contentFormat, setContentFormat] = useState<LessonContentFormat>(
+    (lesson?.contentFormat as LessonContentFormat | undefined) ?? "MARKDOWN",
+  );
+  const [url, setUrl] = useState(lesson?.url ?? "");
   const [description, setDescription] = useState(lesson?.description ?? "");
   // The rich editor is not an <input>, so the body is held here rather than
   // read off the form. Everything else is here too, because knowing whether
@@ -239,15 +284,17 @@ function LessonEditor({
   const markdownInput = useRef<HTMLInputElement | null>(null);
 
   const saved = {
-    contentType: (lesson?.contentType as LessonContentType | undefined) ?? "ARTICLE",
+    resourceType: (lesson?.resourceType as ResourceType | undefined) ?? "DOCUMENT",
+    sourceType: (lesson?.sourceType as SourceType | undefined) ?? "INLINE",
+    contentFormat: (lesson?.contentFormat as LessonContentFormat | undefined) ?? "MARKDOWN",
+    url: lesson?.url ?? "",
     description: lesson?.description ?? "",
     content: lesson?.content ?? "",
     durationSeconds: lesson?.durationSeconds ?? null,
     completionRule: (lesson?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
   };
 
-  const needsFile = FILE_BACKED.includes(contentType);
-  const hasFileAlready = Boolean(lesson?.hasFile) && lesson?.contentType === contentType;
+  const hasFileAlready = Boolean(lesson?.hasFile) && lesson?.sourceType === sourceType;
   const busy = save.isPending || Boolean(stage);
 
   const durationSeconds = (() => {
@@ -256,9 +303,12 @@ function LessonEditor({
   })();
 
   const isDirty =
-    contentType !== saved.contentType ||
+    resourceType !== saved.resourceType ||
+    sourceType !== saved.sourceType ||
+    (sourceType === "INLINE" &&
+      (body !== saved.content || contentFormat !== saved.contentFormat)) ||
+    (sourceType === "URL" && url !== saved.url) ||
     description !== saved.description ||
-    body !== saved.content ||
     durationSeconds !== saved.durationSeconds ||
     completionRule !== saved.completionRule ||
     file !== null;
@@ -319,8 +369,8 @@ function LessonEditor({
 
   const openCurrentFile = async () => {
     try {
-      const url = await curriculumApi.contentUrl(itemId);
-      window.open(url, "_blank", "noopener,noreferrer");
+      const signed = await curriculumApi.contentUrl(itemId);
+      window.open(signed, "_blank", "noopener,noreferrer");
     } catch (err) {
       toast.error(parseApiError(err).message || "Could not open that file.");
     }
@@ -330,12 +380,16 @@ function LessonEditor({
     e.preventDefault();
     setError("");
 
-    if (contentType === "ARTICLE" && !body.trim()) {
+    if (sourceType === "INLINE" && !body.trim()) {
       setError("A written lesson needs a body. The server refuses an empty one.");
       return;
     }
-    if (needsFile && !file && !hasFileAlready) {
-      setError(`A ${DELIVERY[contentType]?.label.toLowerCase()} lesson needs a file.`);
+    if (sourceType === "URL" && !/^https?:\/\//i.test(url.trim())) {
+      setError("A link lesson needs an http or https address.");
+      return;
+    }
+    if (sourceType === "FILE" && !file && !hasFileAlready) {
+      setError("Choose a file to upload.");
       return;
     }
 
@@ -349,7 +403,12 @@ function LessonEditor({
 
       const payload: SaveLessonRequest & { itemId: string } = {
         itemId,
-        contentType,
+        // The material is named after the item it teaches. It is a library
+        // resource like any other and could be named separately, but a second
+        // name for the same thing is a second thing to keep in step.
+        title,
+        resourceType,
+        sourceType,
         completionRule,
         description: description.trim() || null,
         durationSeconds,
@@ -357,7 +416,8 @@ function LessonEditor({
         // field cleared. The file is the exception: omitting it keeps the one
         // already attached, which is the only way to edit a video lesson at all
         // — its media id is never given back to us to re-send.
-        ...(contentType === "ARTICLE" ? { content: body.trim() } : {}),
+        ...(sourceType === "INLINE" ? { content: body.trim(), contentFormat } : {}),
+        ...(sourceType === "URL" ? { url: url.trim() } : {}),
         ...(mediaId ? { mediaId } : {}),
       };
 
@@ -368,6 +428,7 @@ function LessonEditor({
       // defaulted does not leave the page looking unsaved.
       setDescription(result.description ?? "");
       setBody(result.content ?? "");
+      setUrl(result.url ?? "");
       setCompletionRule((result.completionRule as LessonCompletionRule | undefined) ?? "MANUAL");
       toast.success("Lesson saved.");
     } catch (err) {
@@ -407,13 +468,35 @@ function LessonEditor({
 
       <form id={FORM_ID} onSubmit={submit} className="flex-1 space-y-5 p-4 sm:p-6">
         <section className="card-surface space-y-4 p-4 sm:p-5">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Delivered as</Label>
+              <Label>What it is</Label>
               <Select
-                value={contentType}
+                value={resourceType}
+                onValueChange={(value) => setResourceType(value as ResourceType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {KIND[type]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                How it is listed and what a student expects to open.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Where it lives</Label>
+              <Select
+                value={sourceType}
                 onValueChange={(value) => {
-                  setContentType(value as LessonContentType);
+                  setSourceType(value as SourceType);
                   setFile(null);
                 }}
               >
@@ -421,16 +504,18 @@ function LessonEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CONTENT_TYPES.map((type) => (
+                  {SOURCE_TYPES.map((type) => (
                     <SelectItem key={type} value={type}>
-                      {DELIVERY[type]?.label}
+                      {WHERE[type]?.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{DELIVERY[contentType]?.hint}</p>
+              <p className="text-xs text-muted-foreground">{WHERE[sourceType]?.hint}</p>
             </div>
+          </div>
 
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="l-minutes">How long it takes</Label>
               <div className="flex items-center gap-1.5">
@@ -502,7 +587,7 @@ function LessonEditor({
           </div>
         </section>
 
-        {contentType === "ARTICLE" && (
+        {sourceType === "INLINE" && (
           <section className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -557,23 +642,74 @@ function LessonEditor({
                 )}
               </div>
             </div>
-            <MarkdownEditor
-              value={body}
-              onChange={setBody}
-              seedKey={`${itemId}:${bodySeed}`}
-              className="[&_.lernova-mdx-content]:min-h-[65vh]"
+            {contentFormat === "MARKDOWN" ? (
+              <MarkdownEditor
+                value={body}
+                onChange={setBody}
+                seedKey={`${itemId}:${bodySeed}`}
+                className="[&_.lernova-mdx-content]:min-h-[65vh]"
+              />
+            ) : (
+              // The rich editor speaks markdown and only markdown. Handing it
+              // HTML would quietly rewrite somebody's markup, so the other two
+              // formats get a plain box and are stored exactly as typed.
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="min-h-[65vh] font-mono text-xs"
+                spellCheck={contentFormat === "PLAIN_TEXT"}
+              />
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="l-format" className="text-xs text-muted-foreground">
+                  Stored as
+                </Label>
+                <Select
+                  value={contentFormat}
+                  onValueChange={(value) => setContentFormat(value as LessonContentFormat)}
+                >
+                  <SelectTrigger id="l-format" className="h-7 w-36 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FORMATS.map((format) => (
+                      <SelectItem key={format} value={format}>
+                        {FORMAT_LABEL[format]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* The format is recorded with the text now. It used to be
+                  markdown by the editor's habit and nothing else, which left a
+                  renderer free to guess wrong. */}
+              <p className="flex-1 text-xs text-muted-foreground">
+                Written down with the text, so whatever displays this later does not have to guess.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {sourceType === "URL" && (
+          <section className="space-y-1.5">
+            <Label htmlFor="l-url">Where it is</Label>
+            <Input
+              id="l-url"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
             />
             <p className="text-xs text-muted-foreground">
-              Type as you would in a document, or load a <code>.md</code> file you already have.
-              What is stored is markdown either way, so it stays readable outside this editor — the
-              toolbar toggle switches between the rich view and the source.
+              http and https only. Anything a browser would execute is refused.
             </p>
           </section>
         )}
 
-        {needsFile && (
+        {sourceType === "FILE" && (
           <section className="space-y-2">
-            <Label htmlFor="l-file">{DELIVERY[contentType]?.label} file</Label>
+            <Label htmlFor="l-file">{KIND[resourceType]} file</Label>
 
             {hasFileAlready && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3">
@@ -601,7 +737,7 @@ function LessonEditor({
               <Input
                 id="l-file"
                 type="file"
-                accept={contentType === "VIDEO" ? "video/*" : undefined}
+                accept={acceptFor(resourceType)}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 className="mx-auto mt-3 max-w-sm"
               />
@@ -614,19 +750,15 @@ function LessonEditor({
                   Uploaded straight to storage — the bytes never pass through the API.
                 </p>
               )}
-              {contentType === "VIDEO" && (
+              {resourceType === "VIDEO" && (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  A new file queues an encode. The original plays until it finishes.
+                  A new file queues an encode, once per file rather than once per lesson. The
+                  original plays until it finishes.
                 </p>
               )}
             </div>
           </section>
         )}
-
-        <p className="text-xs text-muted-foreground">
-          Audio and external-link lessons are not stored yet — the API has the names but no table
-          behind them, so they are left out of the choices above rather than failing on save.
-        </p>
 
         {stage && !error && (
           <p className="rounded-lg border bg-secondary/40 p-2.5 text-xs text-muted-foreground">
