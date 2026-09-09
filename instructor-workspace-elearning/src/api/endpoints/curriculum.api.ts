@@ -131,6 +131,23 @@ export const curriculumApi = {
     return data;
   },
 
+  /**
+   * A short-lived URL for the file behind a VIDEO, DOCUMENT or AUDIO lesson.
+   *
+   * Fetched when it is asked for rather than held in the lesson: media ids are
+   * never exposed, and the URL it hands back expires. A link rendered into the
+   * page at load time would be dead by the time anybody clicked it.
+   */
+  async contentUrl(itemId: string): Promise<string> {
+    const { data, error } = await apiClient.GET("/api/v1/items/{itemId}/lesson/content-url", {
+      params: { path: { itemId } },
+    });
+    if (error || !data?.contentUrl) {
+      throw parseApiError(error ?? { message: "No file is attached to this lesson." });
+    }
+    return data.contentUrl;
+  },
+
   /** Creates the lesson or replaces it; there is no partial update. */
   async saveLesson(itemId: string, body: SaveLessonRequest): Promise<LessonResponse> {
     const { data, error } = await apiClient.PUT("/api/v1/items/{itemId}/lesson", {

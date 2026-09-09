@@ -1,10 +1,17 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Save } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
+import { ArrowLeft, Download, FileUp, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { useItemQuery, useLessonQuery, useSaveLessonMutation } from "@/hooks/queries";
-import { mediaApi, parseApiError, type LessonContentType, type SaveLessonRequest } from "@/api";
+import {
+  curriculumApi,
+  mediaApi,
+  parseApiError,
+  type LessonCompletionRule,
+  type LessonContentType,
+  type SaveLessonRequest,
+} from "@/api";
 import { MarkdownEditor } from "@/components/workspace/MarkdownEditor";
 import { ResourcePanel } from "@/components/workspace/ResourcePanel";
 import { Badge } from "@/components/ui/badge";
@@ -20,13 +27,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 const FORM_ID = "lesson-page-form";
 
-const CONTENT_TYPES: LessonContentType[] = ["ARTICLE", "VIDEO", "DOCUMENT", "AUDIO", "EXTERNAL"];
+/**
+ * The three kinds of lesson the platform can actually store.
+ *
+ * `AUDIO` and `EXTERNAL` are in the API's enum but have no content table
+ * behind them, so the server refuses them with CONTENT_TYPE_NOT_SUPPORTED.
+ * Offering them here would be offering a choice that cannot be saved, so they
+ * are named below the control instead of listed inside it.
+ */
+const CONTENT_TYPES: LessonContentType[] = ["ARTICLE", "VIDEO", "DOCUMENT"];
 
-/** The content types whose body is an uploaded file rather than typed text. */
-const FILE_BACKED: LessonContentType[] = ["VIDEO", "DOCUMENT", "AUDIO"];
+/** The kinds whose body is an uploaded file rather than typed text. */
+const FILE_BACKED: LessonContentType[] = ["VIDEO", "DOCUMENT"];
+
+const DELIVERY: Record<string, { label: string; hint: string }> = {
+  ARTICLE: { label: "Written", hint: "Written here, in the editor below." },
+  VIDEO: {
+    label: "Video",
+    hint: "A video you upload. It is encoded for streaming after it lands.",
+  },
+  DOCUMENT: { label: "Document", hint: "A file to read — a PDF, slides, a worksheet." },
+};
+
+const COMPLETION_RULES: LessonCompletionRule[] = ["MANUAL", "VIEW", "DURATION", "PERCENTAGE"];
+
+const COMPLETION: Record<string, { label: string; hint: string }> = {
+  MANUAL: { label: "The student marks it done", hint: "They decide when they have finished." },
+  VIEW: { label: "Opening it is enough", hint: "Counted as done as soon as it is opened." },
+  DURATION: {
+    label: "After its stated duration",
+    hint: "Counted once they have spent the duration above on it.",
+  },
+  PERCENTAGE: {
+    label: "After a share of it",
+    hint: "Counted once they are a set way through — for video, mostly.",
+  },
+};
+
+const WORDS_PER_MINUTE = 200;
 
 /**
  * Writing one lesson, with the whole page to do it in.
@@ -46,35 +98,90 @@ export const Route = createFileRoute("/_authenticated/courses/$courseId/items/$i
 
 function LessonPage() {
   const { courseId, itemId } = Route.useParams();
-  const navigate = useNavigate();
 
   const item = useItemQuery(courseId, itemId);
   const lesson = useLessonQuery(courseId, itemId);
   const save = useSaveLessonMutation(courseId);
 
   const [contentType, setContentType] = useState<LessonContentType>("ARTICLE");
-  // The rich editor is not an <input>, so FormData cannot see it — the body is
-  // the one field this form holds in state.
+  const [description, setDescription] = useState("");
+  // The rich editor is not an <input>, so the body is held here rather than
+  // read off the form. Everything else is here too, because knowing whether
+  // there is anything unsaved means knowing every current value.
   const [body, setBody] = useState("");
+  const [minutes, setMinutes] = useState("");
+  const [seconds, setSeconds] = useState("");
+  const [completionRule, setCompletionRule] = useState<LessonCompletionRule>("MANUAL");
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState("");
   const [error, setError] = useState("");
 
-  // Seeded once the saved lesson arrives. Keyed on the item so navigating
-  // between lessons in the sidebar does not carry the previous body across.
+  const saved = {
+    contentType: (lesson.data?.contentType as LessonContentType | undefined) ?? "ARTICLE",
+    description: lesson.data?.description ?? "",
+    content: lesson.data?.content ?? "",
+    durationSeconds: lesson.data?.durationSeconds ?? null,
+    completionRule: (lesson.data?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL",
+  };
+
+  /**
+   * Seeded once per lesson, not on every change of the query's data.
+   *
+   * Re-seeding whenever the cached lesson changed meant a background refetch —
+   * which React Query does on window focus — could overwrite half-written text
+   * with the last saved version. It is seeded when the item changes, and after
+   * that the page is the authority until it saves.
+   */
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    const saved = lesson.data?.contentType as LessonContentType | undefined;
-    if (saved) setContentType(saved);
-    setBody(lesson.data?.content ?? "");
+    if (lesson.isLoading) return;
+    if (seededFor.current === itemId) return;
+    seededFor.current = itemId;
+
+    const data = lesson.data;
+    setContentType((data?.contentType as LessonContentType | undefined) ?? "ARTICLE");
+    setDescription(data?.description ?? "");
+    setBody(data?.content ?? "");
+    const duration = data?.durationSeconds ?? null;
+    setMinutes(duration ? String(Math.floor(duration / 60)) : "");
+    setSeconds(duration ? String(duration % 60) : "");
+    setCompletionRule((data?.completionRule as LessonCompletionRule | undefined) ?? "MANUAL");
     setFile(null);
     setStage("");
     setError("");
-  }, [itemId, lesson.data?.contentType, lesson.data?.content]);
+  }, [itemId, lesson.isLoading, lesson.data]);
 
   const existing = lesson.data;
   const needsFile = FILE_BACKED.includes(contentType);
   const hasFileAlready = Boolean(existing?.hasFile) && existing?.contentType === contentType;
   const busy = save.isPending || Boolean(stage);
+
+  const durationSeconds = (() => {
+    const total = Math.round(Number(minutes || 0) * 60 + Number(seconds || 0));
+    return Number.isFinite(total) && total > 0 ? total : null;
+  })();
+
+  const isDirty =
+    contentType !== saved.contentType ||
+    description !== saved.description ||
+    body !== saved.content ||
+    durationSeconds !== saved.durationSeconds ||
+    completionRule !== saved.completionRule ||
+    file !== null;
+
+  /**
+   * Leaving with unsaved work asks first.
+   *
+   * The sidebar is one click from every other lesson in the course, so the way
+   * to lose an afternoon's writing is an ordinary navigation rather than
+   * anything careless. `enableBeforeUnload` covers closing the tab, which the
+   * router cannot intercept.
+   */
+  const blocker = useBlocker({
+    shouldBlockFn: () => isDirty,
+    enableBeforeUnload: () => isDirty,
+    withResolver: true,
+  });
 
   if (item.isLoading) {
     return (
@@ -128,17 +235,28 @@ function LessonPage() {
     );
   }
 
+  const words = body.trim() ? body.trim().split(/\s+/).length : 0;
+  const readingMinutes = Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+
+  const openCurrentFile = async () => {
+    try {
+      const url = await curriculumApi.contentUrl(itemId);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      toast.error(parseApiError(err).message || "Could not open that file.");
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    const form = new FormData(e.target as HTMLFormElement);
-    const description = String(form.get("description") ?? "").trim();
-    const content =
-      contentType === "ARTICLE" ? body.trim() : String(form.get("content") ?? "").trim();
-    const durationRaw = String(form.get("durationSeconds") ?? "").trim();
 
+    if (contentType === "ARTICLE" && !body.trim()) {
+      setError("A written lesson needs a body. The server refuses an empty one.");
+      return;
+    }
     if (needsFile && !file && !hasFileAlready) {
-      setError(`A ${contentType.toLowerCase()} lesson needs a file.`);
+      setError(`A ${DELIVERY[contentType]?.label.toLowerCase()} lesson needs a file.`);
       return;
     }
 
@@ -153,15 +271,25 @@ function LessonPage() {
       const payload: SaveLessonRequest & { itemId: string } = {
         itemId,
         contentType,
-        ...(description ? { description } : {}),
-        ...(contentType === "ARTICLE" || contentType === "EXTERNAL" ? { content } : {}),
+        completionRule,
+        description: description.trim() || null,
+        durationSeconds,
+        // The whole lesson is replaced on every save, so a field left out is a
+        // field cleared. The file is the exception: omitting it keeps the one
+        // already attached, which is the only way to edit a video lesson at all
+        // — its media id is never given back to us to re-send.
+        ...(contentType === "ARTICLE" ? { content: body.trim() } : {}),
         ...(mediaId ? { mediaId } : {}),
-        ...(durationRaw ? { durationSeconds: Number(durationRaw) } : {}),
       };
 
-      await save.mutateAsync(payload);
+      const result = await save.mutateAsync(payload);
       setStage("");
       setFile(null);
+      // Take the server's version of what was stored, so anything it trimmed or
+      // defaulted does not leave the page looking unsaved.
+      setDescription(result.description ?? "");
+      setBody(result.content ?? "");
+      setCompletionRule((result.completionRule as LessonCompletionRule | undefined) ?? "MANUAL");
       toast.success("Lesson saved.");
     } catch (err) {
       setStage("");
@@ -179,11 +307,22 @@ function LessonPage() {
             <BackLink courseId={courseId} />
             <h1 className="mt-1 truncate text-lg font-bold tracking-tight">{data.title}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            {lesson.isError && (
-              <span className="text-xs text-muted-foreground">Not written yet</span>
-            )}
-            <Button type="submit" form={FORM_ID} size="sm" disabled={busy}>
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "text-xs",
+                isDirty
+                  ? "font-medium text-amber-600 dark:text-amber-500"
+                  : "text-muted-foreground",
+              )}
+            >
+              {isDirty
+                ? "Unsaved changes"
+                : lesson.isError
+                  ? "Not written yet"
+                  : "Everything saved"}
+            </span>
+            <Button type="submit" form={FORM_ID} size="sm" disabled={busy || !isDirty}>
               <Save className="h-4 w-4" />
               {busy ? stage || "Saving…" : "Save lesson"}
             </Button>
@@ -191,120 +330,184 @@ function LessonPage() {
         </div>
       </header>
 
-      <form id={FORM_ID} onSubmit={submit} className="flex-1 space-y-5 p-4 sm:p-6" key={itemId}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>How this lesson is delivered</Label>
-            <Select
-              value={contentType}
-              onValueChange={(v) => {
-                setContentType(v as LessonContentType);
-                setFile(null);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTENT_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t.charAt(0) + t.slice(1).toLowerCase()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Changing this changes what the lesson holds, so it clears a file you had picked.
-            </p>
+      <form id={FORM_ID} onSubmit={submit} className="flex-1 space-y-5 p-4 sm:p-6">
+        <section className="card-surface space-y-4 p-4 sm:p-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>Delivered as</Label>
+              <Select
+                value={contentType}
+                onValueChange={(value) => {
+                  setContentType(value as LessonContentType);
+                  setFile(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTENT_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {DELIVERY[type]?.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{DELIVERY[contentType]?.hint}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="l-minutes">How long it takes</Label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id="l-minutes"
+                  type="number"
+                  min={0}
+                  value={minutes}
+                  onChange={(e) => setMinutes(e.target.value)}
+                  className="w-20"
+                  placeholder="0"
+                />
+                <span className="text-xs text-muted-foreground">min</span>
+                <Input
+                  id="l-seconds"
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={seconds}
+                  onChange={(e) => setSeconds(e.target.value)}
+                  className="w-20"
+                  placeholder="0"
+                />
+                <span className="text-xs text-muted-foreground">sec</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Optional. Shown to students before they start.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Counts as done when</Label>
+              <Select
+                value={completionRule}
+                onValueChange={(value) => setCompletionRule(value as LessonCompletionRule)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMPLETION_RULES.map((rule) => (
+                    <SelectItem key={rule} value={rule}>
+                      {COMPLETION[rule]?.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Honest about where this stands: the field is stored and read
+                  back, but nothing in the platform acts on it yet. */}
+              <p className="text-xs text-muted-foreground">
+                {COMPLETION[completionRule]?.hint} Recorded on the lesson, though nothing enforces
+                it yet.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="l-duration">Duration in seconds</Label>
-            <Input
-              id="l-duration"
-              name="durationSeconds"
-              type="number"
-              min={0}
-              defaultValue={existing?.durationSeconds ?? ""}
+            <Label htmlFor="l-description">Description</Label>
+            <Textarea
+              id="l-description"
+              name="description"
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Optional. Shown to learners as how long this takes.
+              A line about the lesson, read before it is opened.
             </p>
           </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="l-description">Description</Label>
-          <Textarea
-            id="l-description"
-            name="description"
-            rows={2}
-            defaultValue={existing?.description ?? ""}
-          />
-          <p className="text-xs text-muted-foreground">
-            A line about the lesson, read before it is opened.
-          </p>
-        </div>
+        </section>
 
         {contentType === "ARTICLE" && (
-          <div className="space-y-1.5">
-            <Label>Body</Label>
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <Label>Body</Label>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  {words.toLocaleString()} {words === 1 ? "word" : "words"}
+                </span>
+                {words > 0 && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>about {readingMinutes} min to read</span>
+                    {durationSeconds !== readingMinutes * 60 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          setMinutes(String(readingMinutes));
+                          setSeconds("");
+                        }}
+                      >
+                        Use as the duration
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
             <MarkdownEditor
               value={body}
               onChange={setBody}
               seedKey={itemId}
-              className="[&_.lernova-mdx-content]:min-h-[60vh]"
+              className="[&_.lernova-mdx-content]:min-h-[65vh]"
             />
             <p className="text-xs text-muted-foreground">
               Type as you would in a document. What is stored is markdown, so it stays readable
               outside this editor — the toolbar toggle switches between the rich view and the
               source.
             </p>
-          </div>
-        )}
-
-        {contentType === "EXTERNAL" && (
-          <div className="space-y-1.5">
-            <Label htmlFor="l-content">External link or embed</Label>
-            <Textarea
-              id="l-content"
-              name="content"
-              rows={4}
-              defaultValue={existing?.content ?? ""}
-              placeholder="https://…"
-            />
-            <p className="text-xs text-muted-foreground">
-              Somewhere else entirely — the platform stores the reference, not the content.
-            </p>
-          </div>
+          </section>
         )}
 
         {needsFile && (
-          <div className="space-y-2">
-            <Label htmlFor="l-file">
-              {contentType.charAt(0) + contentType.slice(1).toLowerCase()} file
-            </Label>
+          <section className="space-y-2">
+            <Label htmlFor="l-file">{DELIVERY[contentType]?.label} file</Label>
+
+            {hasFileAlready && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3">
+                <div className="min-w-0 text-xs">
+                  <p className="font-medium">A file is already attached.</p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    Everything else here can be changed without touching it. Choose another file
+                    only to replace it.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void openCurrentFile()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Open the current file
+                </Button>
+              </div>
+            )}
+
             <div className="rounded-xl border border-dashed p-8 text-center">
+              <FileUp className="mx-auto h-6 w-6 text-muted-foreground" />
               <Input
                 id="l-file"
                 type="file"
-                accept={
-                  contentType === "VIDEO"
-                    ? "video/*"
-                    : contentType === "AUDIO"
-                      ? "audio/*"
-                      : undefined
-                }
+                accept={contentType === "VIDEO" ? "video/*" : undefined}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="mx-auto max-w-sm"
+                className="mx-auto mt-3 max-w-sm"
               />
               {file ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
-                </p>
-              ) : hasFileAlready ? (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  A file is already attached. Choose another only to replace it.
                 </p>
               ) : (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -313,12 +516,17 @@ function LessonPage() {
               )}
               {contentType === "VIDEO" && (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Uploading queues an encode. The original plays until it finishes.
+                  A new file queues an encode. The original plays until it finishes.
                 </p>
               )}
             </div>
-          </div>
+          </section>
         )}
+
+        <p className="text-xs text-muted-foreground">
+          Audio and external-link lessons are not stored yet — the API has the names but no table
+          behind them, so they are left out of the choices above rather than failing on save.
+        </p>
 
         {stage && !error && (
           <p className="rounded-lg border bg-secondary/40 p-2.5 text-xs text-muted-foreground">
@@ -338,24 +546,20 @@ function LessonPage() {
         />
       </div>
 
-      {/* Navigating away is the sidebar's job; this only exists so the page has
-          somewhere obvious to go when it is opened directly. */}
-      <div className="px-4 pb-6 sm:px-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            void navigate({
-              to: "/courses/$courseId",
-              params: { courseId },
-              search: { tab: "curriculum", item: itemId },
-            })
-          }
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to the curriculum
-        </Button>
-      </div>
+      <AlertDialog open={blocker.status === "blocked"}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave without saving?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This lesson has changes that have not been saved. Leaving now loses them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>Stay here</AlertDialogCancel>
+            <AlertDialogAction onClick={() => blocker.proceed?.()}>Leave anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

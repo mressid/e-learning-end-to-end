@@ -51,6 +51,8 @@ export type RelationshipType = NonNullable<AttachResourceRequest["relationshipTy
 export type CourseItemType = NonNullable<CreateCourseItemRequest["type"]>;
 /** How a lesson carries its content. */
 export type LessonContentType = NonNullable<SaveLessonRequest["contentType"]>;
+/** When a lesson counts as done. */
+export type LessonCompletionRule = NonNullable<SaveLessonRequest["completionRule"]>;
 
 /**
  * One page of anything.
