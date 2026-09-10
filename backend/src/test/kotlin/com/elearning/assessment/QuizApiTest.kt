@@ -10,7 +10,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import tools.jackson.databind.JsonNode
@@ -461,5 +463,288 @@ class QuizApiTest(
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("NOT_A_QUIZ_ITEM") }
         }
+    }
+
+    // ---- editing what has been authored ----------------------------------
+
+    private fun patchQuestion(token: String, f: Fixture, questionId: String, json: String) =
+        mockMvc.patch("/api/v1/items/${f.quizItemId}/quiz/questions/$questionId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $token")
+            content = json
+        }
+
+    private fun questionList(f: Fixture): List<JsonNode> = array(
+        objectMapper.readTree(
+            mockMvc.get("/api/v1/items/${f.quizItemId}/quiz/questions") {
+                header("Authorization", "Bearer ${f.teacher}")
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        ),
+    )
+
+    @Test
+    fun `a quiz's settings can be read back`() {
+        val f = quizCourse(
+            """{"title":"Midterm","instructions":"No notes","passingScore":60,
+                "maxAttempts":2,"timeLimitSeconds":900,"randomizeQuestions":true}""",
+        )
+        mockMvc.get("/api/v1/items/${f.quizItemId}/quiz") {
+            header("Authorization", "Bearer ${f.teacher}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.title") { value("Midterm") }
+            jsonPath("$.instructions") { value("No notes") }
+            jsonPath("$.passingScore") { value(60.00) }
+            jsonPath("$.maxAttempts") { value(2) }
+            jsonPath("$.timeLimitSeconds") { value(900) }
+            jsonPath("$.randomizeQuestions") { value(true) }
+            jsonPath("$.hasAttempts") { value(false) }
+        }
+    }
+
+    @Test
+    fun `the settings say once the quiz has been sat`() {
+        val f = quizCourse()
+        singleChoice(f)
+        startAttempt(enrolledStudent(f), f)
+
+        // The editor needs this to disable the answer key rather than teach the
+        // rule by refusing a save the author has already typed.
+        mockMvc.get("/api/v1/items/${f.quizItemId}/quiz") {
+            header("Authorization", "Bearer ${f.teacher}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.hasAttempts") { value(true) }
+        }
+    }
+
+    @Test
+    fun `an item with no quiz on it yet has nothing to read`() {
+        val teacher = instructorTokenFor("teacher")
+        val courseId = id(postJson("/api/v1/courses", teacher, """{"title":"C ${System.nanoTime()}"}"""))
+        val sectionId = id(postJson("/api/v1/courses/$courseId/sections", teacher, """{"title":"S"}"""))
+        val itemId = id(postJson("/api/v1/sections/$sectionId/items", teacher, """{"title":"Q","type":"QUIZ"}"""))
+
+        mockMvc.get("/api/v1/items/$itemId/quiz") {
+            header("Authorization", "Bearer $teacher")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("QUIZ_NOT_FOUND") }
+        }
+    }
+
+    @Test
+    fun `students cannot read a quiz's settings`() {
+        val f = quizCourse()
+        val student = enrolledStudent(f)
+        mockMvc.get("/api/v1/items/${f.quizItemId}/quiz") {
+            header("Authorization", "Bearer $student")
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("COURSE_ACCESS_DENIED") }
+        }
+    }
+
+    @Test
+    fun `a typo in a question can be fixed without touching its answer key`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f, "2 + 2 ?")
+
+        patchQuestion(f.teacher, f, questionId, """{"text":"What is 2 + 2?","points":5}""")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.text") { value("What is 2 + 2?") }
+                jsonPath("$.points") { value(5.00) }
+                jsonPath("$.type") { value("SINGLE_CHOICE") }
+                // Untouched, and still the answer key it was.
+                jsonPath("$.options.length()") { value(2) }
+                jsonPath("$.options[1].text") { value("4") }
+                jsonPath("$.options[1].isCorrect") { value(true) }
+            }
+    }
+
+    @Test
+    fun `sending only one field leaves the rest as they were`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+
+        patchQuestion(f.teacher, f, questionId, """{"points":3}""").andExpect {
+            status { isOk() }
+            jsonPath("$.points") { value(3.00) }
+            jsonPath("$.text") { value("2 + 2?") }
+        }
+    }
+
+    @Test
+    fun `replacing the options replaces the answer key`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+
+        patchQuestion(
+            f.teacher,
+            f,
+            questionId,
+            """{"options":[{"text":"5","isCorrect":false},{"text":"four","isCorrect":true}]}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.options.length()") { value(2) }
+            jsonPath("$.options[0].text") { value("5") }
+            jsonPath("$.options[1].text") { value("four") }
+            jsonPath("$.options[1].isCorrect") { value(true) }
+        }
+    }
+
+    @Test
+    fun `an edit that would leave a question unanswerable is refused`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+
+        patchQuestion(
+            f.teacher,
+            f,
+            questionId,
+            """{"options":[{"text":"a","isCorrect":false},{"text":"b","isCorrect":false}]}""",
+        ).andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("NO_CORRECT_OPTION") }
+        }
+
+        // The refusal left the original key standing.
+        assertThat(questionList(f).single().get("options").get(1).get("isCorrect").asBoolean()).isTrue()
+    }
+
+    @Test
+    fun `turning a choice question into a text one has to say so`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+
+        // The options it still carries are not allowed on a text question, and
+        // dropping them silently would throw away the author's work unasked.
+        patchQuestion(f.teacher, f, questionId, """{"type":"SHORT_TEXT"}""").andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("OPTIONS_NOT_ALLOWED") }
+        }
+
+        patchQuestion(f.teacher, f, questionId, """{"type":"SHORT_TEXT","options":[]}""").andExpect {
+            status { isOk() }
+            jsonPath("$.type") { value("SHORT_TEXT") }
+            jsonPath("$.options.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `a deleted question takes its gap with it`() {
+        val f = quizCourse()
+        val first = singleChoice(f, "first")
+        val second = singleChoice(f, "second")
+        val third = singleChoice(f, "third")
+
+        mockMvc.delete("/api/v1/items/${f.quizItemId}/quiz/questions/$second") {
+            header("Authorization", "Bearer ${f.teacher}")
+        }.andExpect { status { isNoContent() } }
+
+        val remaining = questionList(f)
+        assertThat(remaining.map { it.get("id").asString() }).containsExactly(first, third)
+        // Positions close ranks rather than leaving a hole at 1.
+        assertThat(remaining.map { it.get("position").asInt() }).containsExactly(0, 1)
+    }
+
+    @Test
+    fun `a question belonging to another quiz is not addressable here`() {
+        val mine = quizCourse()
+        val theirs = quizCourse()
+        val theirQuestion = singleChoice(theirs)
+
+        patchQuestion(mine.teacher, mine, theirQuestion, """{"text":"reach across"}""").andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("QUESTION_NOT_FOUND") }
+        }
+    }
+
+    @Test
+    fun `a stranger cannot edit or delete a question`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+        val stranger = tokenFor("stranger")
+
+        patchQuestion(stranger, f, questionId, """{"text":"mine now"}""").andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("COURSE_ACCESS_DENIED") }
+        }
+        mockMvc.delete("/api/v1/items/${f.quizItemId}/quiz/questions/$questionId") {
+            header("Authorization", "Bearer $stranger")
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("COURSE_ACCESS_DENIED") }
+        }
+    }
+
+    @Test
+    fun `the answer key freezes once a student has sat the quiz`() {
+        val f = quizCourse()
+        val questionId = singleChoice(f)
+        startAttempt(enrolledStudent(f), f)
+
+        patchQuestion(
+            f.teacher,
+            f,
+            questionId,
+            """{"options":[{"text":"4","isCorrect":false},{"text":"5","isCorrect":true}]}""",
+        ).andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("QUIZ_HAS_ATTEMPTS") }
+        }
+
+        mockMvc.delete("/api/v1/items/${f.quizItemId}/quiz/questions/$questionId") {
+            header("Authorization", "Bearer ${f.teacher}")
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("QUIZ_HAS_ATTEMPTS") }
+        }
+
+        // Wording is not the answer key, so a typo is still fixable.
+        patchQuestion(f.teacher, f, questionId, """{"text":"What is 2 + 2?"}""").andExpect {
+            status { isOk() }
+            jsonPath("$.text") { value("What is 2 + 2?") }
+        }
+    }
+
+    @Test
+    fun `the paper cannot be lengthened once a student has sat it`() {
+        val f = quizCourse()
+        singleChoice(f)
+        startAttempt(enrolledStudent(f), f)
+
+        // A score is a percentage of the paper it was earned on. Adding a
+        // question marks the next cohort out of more than the last.
+        mockMvc.post("/api/v1/items/${f.quizItemId}/quiz/questions") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${f.teacher}")
+            content = """{"type":"SHORT_TEXT","text":"And why?"}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("QUIZ_HAS_ATTEMPTS") }
+        }
+    }
+
+    @Test
+    fun `a shuffled quiz keeps one order for the length of an attempt`() {
+        val f = quizCourse("""{"title":"Quiz","randomizeQuestions":true}""")
+        repeat(6) { singleChoice(f, "Question $it") }
+        val student = enrolledStudent(f)
+
+        val started = startAttempt(student, f)
+        val attemptId = started.get("attemptId").asString()
+        val order = { node: JsonNode -> array(node.get("questions")).map { it.get("id").asString() } }
+
+        // Reloading mid-attempt used to reshuffle the paper under the student.
+        val reread = objectMapper.readTree(
+            mockMvc.get("/api/v1/attempts/$attemptId") {
+                header("Authorization", "Bearer $student")
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        )
+
+        assertThat(order(reread)).containsExactlyElementsOf(order(started))
+        assertThat(order(reread)).hasSize(6)
     }
 }

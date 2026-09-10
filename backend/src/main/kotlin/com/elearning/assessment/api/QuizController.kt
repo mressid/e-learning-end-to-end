@@ -8,6 +8,7 @@ import com.elearning.assessment.application.QuizGradingService
 import com.elearning.assessment.application.ResponseGrade
 import com.elearning.assessment.application.SaveQuizCommand
 import com.elearning.assessment.application.SubmittedAnswer
+import com.elearning.assessment.application.UpdateQuestionCommand
 import com.elearning.shared.api.OpenApiConfig
 import com.elearning.shared.api.ReorderRequest
 import com.elearning.shared.errors.ApiError
@@ -22,12 +23,15 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
@@ -43,6 +47,23 @@ class QuizController(
 ) {
 
     // ---- authoring (course editors) --------------------------------------
+
+    @GetMapping("/items/{itemId}/quiz")
+    @Operation(
+        summary = "Read a quiz's settings",
+        description = "Editors only. 404 until a quiz has been saved on the item, which is how " +
+            "an authoring screen tells a blank quiz from one it would otherwise overwrite unseen.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "The stored settings"),
+        ApiResponse(
+            responseCode = "404",
+            description = "No quiz saved on this item yet",
+            content = [Content(schema = Schema(implementation = ApiError::class))],
+        ),
+    )
+    fun quiz(@PathVariable itemId: UUID): QuizResponseDto =
+        QuizResponseDto.of(authoring.quizForEditor(itemId, currentUser.requireId()))
 
     @PutMapping("/items/{itemId}/quiz")
     @Operation(summary = "Create or replace the quiz on a QUIZ course item")
@@ -65,12 +86,18 @@ class QuizController(
     )
 
     @PostMapping("/items/{itemId}/quiz/questions")
-    @Operation(summary = "Append a question")
+    @Operation(
+        summary = "Append a question",
+        description = "Refused once a student has sat the quiz. A score is a percentage of the " +
+            "paper it was earned on, so lengthening the paper leaves earlier attempts " +
+            "recorded against a quiz that no longer exists.",
+    )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "Added"),
         ApiResponse(
             responseCode = "422",
-            description = "Options missing, contradictory, or supplied for a text question",
+            description = "Options missing, contradictory, supplied for a text question, " +
+                "or the quiz has already been attempted",
             content = [Content(schema = Schema(implementation = ApiError::class))],
         ),
     )
@@ -100,6 +127,62 @@ class QuizController(
     )
     fun questions(@PathVariable itemId: UUID): List<AuthorQuestionResponse> =
         authoring.questionsForEditor(itemId, currentUser.requireId()).map(AuthorQuestionResponse::of)
+
+    @PatchMapping("/items/{itemId}/quiz/questions/{questionId}")
+    @Operation(
+        summary = "Edit a question",
+        description = "Only the fields you send change. Wording and points can be corrected at " +
+            "any time; the type and the options cannot once a student has sat the quiz, " +
+            "since both decide how answers already given were marked.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Updated"),
+        ApiResponse(
+            responseCode = "422",
+            description = "Options missing, contradictory, supplied for a text question, " +
+                "or the answer key was touched after the quiz had been attempted",
+            content = [Content(schema = Schema(implementation = ApiError::class))],
+        ),
+    )
+    fun updateQuestion(
+        @PathVariable itemId: UUID,
+        @PathVariable questionId: UUID,
+        @Valid @RequestBody request: UpdateQuestionRequest,
+    ): AuthorQuestionResponse {
+        authoring.updateQuestion(
+            itemId,
+            questionId,
+            UpdateQuestionCommand(
+                type = request.type,
+                text = request.text,
+                points = request.points,
+                options = request.options?.map { OptionCommand(it.text, it.isCorrect) },
+            ),
+            editorId = currentUser.requireId(),
+        )
+        val saved = authoring.questionsForEditor(itemId, currentUser.requireId())
+            .first { it.question.id == questionId }
+        return AuthorQuestionResponse.of(saved)
+    }
+
+    @DeleteMapping("/items/{itemId}/quiz/questions/{questionId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+        summary = "Delete a question",
+        description = "Permanent, and the remaining questions close ranks behind it. Refused " +
+            "once a student has sat the quiz: the delete cascades into their answers, " +
+            "leaving graded attempts scored against questions that no longer exist.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "Deleted"),
+        ApiResponse(
+            responseCode = "422",
+            description = "A student has already sat this quiz",
+            content = [Content(schema = Schema(implementation = ApiError::class))],
+        ),
+    )
+    fun deleteQuestion(@PathVariable itemId: UUID, @PathVariable questionId: UUID) =
+        authoring.deleteQuestion(itemId, questionId, currentUser.requireId())
 
     @PutMapping("/items/{itemId}/quiz/questions/order")
     @Operation(

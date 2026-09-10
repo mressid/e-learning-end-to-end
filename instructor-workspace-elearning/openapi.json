@@ -4473,6 +4473,52 @@
         ]
       }
     },
+    "/api/v1/items/{itemId}/lesson/stream/{name}": {
+      "get": {
+        "description": "The master playlist names its renditions and each rendition names its own segments, so signing only the master was one hop short: a player followed a signed link to a rendition, read a relative segment name out of it, and asked storage for that name unsigned. Renditions therefore come back through here. Same access rule as the lesson, and `name` is checked against what the master actually references rather than trusted from the URL.",
+        "operationId": "streamVariant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.apple.mpegurl": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One rendition's playlist, with its segments signed",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/v1/items/{itemId}/prerequisites": {
       "get": {
         "operationId": "itemPrerequisites",
@@ -4621,6 +4667,52 @@
       }
     },
     "/api/v1/items/{itemId}/quiz": {
+      "get": {
+        "description": "Editors only. 404 until a quiz has been saved on the item, which is how an authoring screen tells a blank quiz from one it would otherwise overwrite unseen.",
+        "operationId": "quiz",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizResponse"
+                }
+              }
+            },
+            "description": "The stored settings"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No quiz saved on this item yet"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read a quiz's settings",
+        "tags": [
+          "Quizzes"
+        ]
+      },
       "put": {
         "operationId": "saveQuiz",
         "parameters": [
@@ -4766,6 +4858,7 @@
         ]
       },
       "post": {
+        "description": "Refused once a student has sat the quiz. A score is a percentage of the paper it was earned on, so lengthening the paper leaves earlier attempts recorded against a quiz that no longer exists.",
         "operationId": "addQuestion",
         "parameters": [
           {
@@ -4807,7 +4900,7 @@
                 }
               }
             },
-            "description": "Options missing, contradictory, or supplied for a text question"
+            "description": "Options missing, contradictory, supplied for a text question, or the quiz has already been attempted"
           }
         },
         "security": [
@@ -4867,6 +4960,121 @@
           }
         ],
         "summary": "Reorder a quiz's questions",
+        "tags": [
+          "Quizzes"
+        ]
+      }
+    },
+    "/api/v1/items/{itemId}/quiz/questions/{questionId}": {
+      "delete": {
+        "description": "Permanent, and the remaining questions close ranks behind it. Refused once a student has sat the quiz: the delete cascades into their answers, leaving graded attempts scored against questions that no longer exist.",
+        "operationId": "deleteQuestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A student has already sat this quiz"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a question",
+        "tags": [
+          "Quizzes"
+        ]
+      },
+      "patch": {
+        "description": "Only the fields you send change. Wording and points can be corrected at any time; the type and the options cannot once a student has sat the quiz, since both decide how answers already given were marked.",
+        "operationId": "updateQuestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorQuestionResponse"
+                }
+              }
+            },
+            "description": "Updated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Options missing, contradictory, supplied for a text question, or the answer key was touched after the quiz had been attempted"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Edit a question",
         "tags": [
           "Quizzes"
         ]
@@ -8967,6 +9175,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "hasAttempts": {
+            "type": "boolean",
+            "description": "Whether a student has sat this quiz. Once true the paper is frozen: no question can be added or deleted, and a question's type and options can no longer be changed. Wording, points and the quiz's own settings stay editable."
+          },
           "instructions": {
             "type": [
               "string",
@@ -10162,6 +10374,50 @@
             ],
             "maxLength": 64,
             "minLength": 0
+          }
+        }
+      },
+      "UpdateQuestionRequest": {
+        "type": "object",
+        "description": "Only the fields you send change. Wording and points are always editable; the type and the options are refused once a student has sat the quiz.",
+        "properties": {
+          "options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "description": "Replaces every option; omit to leave them alone, send an empty list to clear them",
+            "items": {
+              "$ref": "#/components/schemas/QuestionOptionRequest"
+            }
+          },
+          "points": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2147483647,
+            "minLength": 1
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SINGLE_CHOICE",
+              "MULTIPLE_CHOICE",
+              "TRUE_FALSE",
+              "SHORT_TEXT",
+              "LONG_TEXT"
+            ]
           }
         }
       },

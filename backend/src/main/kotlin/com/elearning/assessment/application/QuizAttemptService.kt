@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.Random
 import java.util.UUID
 
 /**
@@ -229,7 +230,7 @@ class QuizAttemptService(
             .findByQuestionIdIn(questionList.mapNotNull { it.id })
             .groupBy { it.questionId }
 
-        val ordered = if (quiz.randomizeQuestions) questionList.shuffled() else questionList
+        val ordered = if (quiz.randomizeQuestions) questionList.shuffled(shuffleFor(attempt)) else questionList
         return AttemptView(
             attempt = attempt,
             quiz = quiz,
@@ -246,6 +247,21 @@ class QuizAttemptService(
                 )
             },
         )
+    }
+
+    /**
+     * The same shuffle every time this attempt is read.
+     *
+     * The order used to be drawn fresh on each call, and this runs on starting
+     * an attempt *and* on reading one back - so a student who reloaded the page
+     * mid-attempt found the questions rearranged under them, halfway through
+     * answering them. Seeding from the attempt's own id keeps one sitting in a
+     * fixed order without storing that order anywhere, while still handing two
+     * students different papers.
+     */
+    private fun shuffleFor(attempt: QuizAttempt): Random {
+        val id = requireNotNull(attempt.id)
+        return Random(id.mostSignificantBits xor id.leastSignificantBits)
     }
 
     private companion object {

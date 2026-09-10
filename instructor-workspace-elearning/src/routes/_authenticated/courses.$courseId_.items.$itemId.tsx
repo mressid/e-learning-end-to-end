@@ -11,6 +11,7 @@ import {
   type LessonResponse,
 } from "@/api";
 import { LessonBlocks } from "@/components/workspace/LessonBlocks";
+import { QuizEditor } from "@/components/workspace/QuizEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,9 +111,32 @@ function LessonPage() {
     );
   }
 
-  // Only lessons have blocks. A quiz or an assignment has its own editor,
-  // which does not exist yet — say so rather than showing a lesson form that
-  // would save the wrong thing.
+  // A quiz stores settings and questions, not blocks, so it gets its own editor
+  // rather than a lesson form that would save the wrong thing.
+  if (item.data.type === "QUIZ") {
+    return (
+      <div className="space-y-4 p-4 sm:p-6">
+        <BackLink courseId={courseId} />
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-bold tracking-tight">{item.data.title}</h2>
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+            Quiz
+          </Badge>
+        </div>
+        <QuizEditor
+          // A different quiz is a different editor, not the same one told to
+          // forget: every field inside is seeded from the quiz it was mounted
+          // with, and a key is the honest way to say so.
+          key={itemId}
+          courseId={courseId}
+          itemId={itemId}
+          itemTitle={item.data.title ?? ""}
+        />
+      </div>
+    );
+  }
+
+  // An assignment still has no screen of its own.
   if (item.data.type !== "LESSON") {
     return (
       <div className="space-y-6 p-4 sm:p-6">
@@ -123,9 +147,7 @@ function LessonPage() {
             {item.data.type}
           </Badge>
           <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-            {item.data.type === "QUIZ"
-              ? "Quiz authoring is not built yet — questions and options have endpoints, but no screen."
-              : "Assignment authoring is not built yet — the endpoints exist, but no screen does."}
+            Assignment authoring is not built yet — the endpoints exist, but no screen does.
           </p>
         </div>
       </div>
