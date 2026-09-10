@@ -1606,6 +1606,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/items/{itemId}/lesson/stream/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One rendition's playlist, with its segments signed
+         * @description The master playlist names its renditions and each rendition names its own segments, so signing only the master was one hop short: a player followed a signed link to a rendition, read a relative segment name out of it, and asked storage for that name unsigned. Renditions therefore come back through here. Same access rule as the lesson, and `name` is checked against what the master actually references rather than trusted from the URL.
+         */
+        get: operations["streamVariant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{itemId}/prerequisites": {
         parameters: {
             query?: never;
@@ -1654,7 +1674,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read a quiz's settings
+         * @description Editors only. 404 until a quiz has been saved on the item, which is how an authoring screen tells a blank quiz from one it would otherwise overwrite unseen.
+         */
+        get: operations["quiz"];
         /** Create or replace the quiz on a QUIZ course item */
         put: operations["saveQuiz"];
         post?: never;
@@ -1697,7 +1721,10 @@ export interface paths {
          */
         get: operations["questions"];
         put?: never;
-        /** Append a question */
+        /**
+         * Append a question
+         * @description Refused once a student has sat the quiz. A score is a percentage of the paper it was earned on, so lengthening the paper leaves earlier attempts recorded against a quiz that no longer exists.
+         */
         post: operations["addQuestion"];
         delete?: never;
         options?: never;
@@ -1723,6 +1750,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{itemId}/quiz/questions/{questionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a question
+         * @description Permanent, and the remaining questions close ranks behind it. Refused once a student has sat the quiz: the delete cascades into their answers, leaving graded attempts scored against questions that no longer exist.
+         */
+        delete: operations["deleteQuestion"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a question
+         * @description Only the fields you send change. Wording and points can be corrected at any time; the type and the options cannot once a student has sat the quiz, since both decide how answers already given were marked.
+         */
+        patch: operations["updateQuestion"];
         trace?: never;
     };
     "/api/v1/items/{itemId}/resources": {
@@ -3268,6 +3319,8 @@ export interface components {
         QuizResponse: {
             /** Format: uuid */
             courseItemId?: string;
+            /** @description Whether a student has sat this quiz. Once true the paper is frozen: no question can be added or deleted, and a question's type and options can no longer be changed. Wording, points and the quiz's own settings stay editable. */
+            hasAttempts?: boolean;
             instructions?: string | null;
             /** Format: int32 */
             maxAttempts?: number | null;
@@ -3682,6 +3735,15 @@ export interface components {
             language?: string | null;
             lastName?: string | null;
             timezone?: string | null;
+        };
+        /** @description Only the fields you send change. Wording and points are always editable; the type and the options are refused once a student has sat the quiz. */
+        UpdateQuestionRequest: {
+            /** @description Replaces every option; omit to leave them alone, send an empty list to clear them */
+            options?: components["schemas"]["QuestionOptionRequest"][] | null;
+            points?: number | null;
+            text?: string | null;
+            /** @enum {string|null} */
+            type?: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_TEXT" | "LONG_TEXT" | null;
         };
         /**
          * @description A partial edit: a field left out is left alone, unlike the lesson
@@ -6269,6 +6331,29 @@ export interface operations {
             };
         };
     };
+    streamVariant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.apple.mpegurl": string;
+                };
+            };
+        };
+    };
     itemPrerequisites: {
         parameters: {
             query?: never;
@@ -6343,6 +6428,37 @@ export interface operations {
             };
             /** @description Not enrolled, or the enrolment is no longer active */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    quiz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizResponse"];
+                };
+            };
+            /** @description No quiz saved on this item yet */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6464,7 +6580,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthorQuestionResponse"];
                 };
             };
-            /** @description Options missing, contradictory, or supplied for a text question */
+            /** @description Options missing, contradictory, supplied for a text question, or the quiz has already been attempted */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6497,6 +6613,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthorQuestionResponse"][];
+                };
+            };
+        };
+    };
+    deleteQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A student has already sat this quiz */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorQuestionResponse"];
+                };
+            };
+            /** @description Options missing, contradictory, supplied for a text question, or the answer key was touched after the quiz had been attempted */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

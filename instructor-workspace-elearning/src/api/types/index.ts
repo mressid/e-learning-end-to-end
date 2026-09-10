@@ -31,6 +31,15 @@ export type LessonResponse = Schemas["LessonResponse"];
 export type SaveLessonRequest = Schemas["SaveLessonRequest"];
 export type UpdateLessonDetailsRequest = Schemas["UpdateLessonDetailsRequest"];
 
+// Quizzes — settings, and the questions inside them
+export type QuizResponse = Schemas["QuizResponse"];
+export type SaveQuizRequest = Schemas["SaveQuizRequest"];
+export type AddQuestionRequest = Schemas["AddQuestionRequest"];
+export type UpdateQuestionRequest = Schemas["UpdateQuestionRequest"];
+export type QuestionOptionRequest = Schemas["QuestionOptionRequest"];
+export type AuthorQuestionResponse = Schemas["AuthorQuestionResponse"];
+export type AuthorQuestionOption = Schemas["AuthorQuestionOption"];
+
 // Resources — documents, links and inline notes
 export type ResourceResponse = Schemas["ResourceResponse"];
 export type CreateResourceRequest = Schemas["CreateResourceRequest"];
@@ -63,6 +72,8 @@ export type CourseItemType = NonNullable<CreateCourseItemRequest["type"]>;
 export type LessonCompletionRule = NonNullable<SaveLessonRequest["completionRule"]>;
 /** How the text of an INLINE lesson is written. */
 export type LessonContentFormat = NonNullable<SaveLessonRequest["contentFormat"]>;
+/** What a question asks for, and therefore how it is marked. */
+export type QuestionType = NonNullable<AddQuestionRequest["type"]>;
 
 /**
  * One page of anything.

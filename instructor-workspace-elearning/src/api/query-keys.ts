@@ -27,6 +27,9 @@ export const queryKeys = {
     item: (courseId: string, itemId: string) => ["curriculum", courseId, "item", itemId] as const,
     lesson: (courseId: string, itemId: string) =>
       ["curriculum", courseId, "lesson", itemId] as const,
+    quiz: (courseId: string, itemId: string) => ["curriculum", courseId, "quiz", itemId] as const,
+    quizQuestions: (courseId: string, itemId: string) =>
+      ["curriculum", courseId, "quiz", itemId, "questions"] as const,
   },
   resources: {
     all: ["resources"] as const,
