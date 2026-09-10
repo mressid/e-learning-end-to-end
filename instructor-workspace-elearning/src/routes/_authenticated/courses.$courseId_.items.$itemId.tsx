@@ -755,8 +755,10 @@ function LessonEditor({
     () =>
       resourceType !== saved.resourceType ||
       sourceType !== saved.sourceType ||
-      (sourceType === "INLINE" &&
-        (bodySnapshot !== saved.content || contentFormat !== saved.contentFormat)) ||
+      // Not gated on INLINE any more: writing goes with a video or a link as
+      // easily as it is one, so an edit to it counts wherever it appears.
+      bodySnapshot !== saved.content ||
+      contentFormat !== saved.contentFormat ||
       (sourceType === "URL" && url !== saved.url) ||
       description !== saved.description ||
       durationSeconds !== saved.durationSeconds ||
@@ -925,7 +927,11 @@ function LessonEditor({
         // field cleared. The file is the exception: omitting it keeps the one
         // already attached, which is the only way to edit a video lesson at all
         // — its media id is never given back to us to re-send.
-        ...(sourceType === "INLINE" ? { content: bodyRef.current.trim(), contentFormat } : {}),
+        // Sent whatever the lesson is. It is the body when the lesson is the
+        // writing, and the notes beside the material when it is not; empty
+        // means there are none, which is how the server reads a missing one.
+        content: bodyRef.current.trim(),
+        contentFormat,
         ...(sourceType === "URL" ? { url: url.trim() } : {}),
         ...(mediaId ? { mediaId } : {}),
       };
@@ -1113,117 +1119,6 @@ function LessonEditor({
           </div>
         </section>
 
-        {sourceType === "INLINE" && (
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 w-6 px-0"
-                  aria-expanded={!bodyCollapsed}
-                  aria-controls="l-body-fields"
-                  aria-label={bodyCollapsed ? "Expand body" : "Collapse body"}
-                  onClick={() => setBodyCollapsed((collapsed) => !collapsed)}
-                >
-                  {bodyCollapsed ? (
-                    <ChevronRight className="h-3 w-3" />
-                  ) : (
-                    <ChevronDown className="h-3 w-3" />
-                  )}
-                </Button>
-                <Label>Body</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => markdownInput.current?.click()}
-                >
-                  <Upload className="h-3 w-3" />
-                  Load from a file
-                </Button>
-                <input
-                  ref={markdownInput}
-                  type="file"
-                  accept={MARKDOWN_ACCEPT}
-                  className="hidden"
-                  onChange={(e) => {
-                    const chosen = e.target.files?.[0] ?? null;
-                    // Cleared so that picking the same file twice in a row
-                    // still counts as a change.
-                    e.target.value = "";
-                    void loadMarkdownFile(chosen);
-                  }}
-                />
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>
-                  {words.toLocaleString()} {words === 1 ? "word" : "words"}
-                </span>
-                {words > 0 && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>about {readingMinutes} min to read</span>
-                    {durationSeconds !== readingMinutes * 60 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={() => {
-                          setMinutes(String(readingMinutes));
-                          setSeconds("");
-                        }}
-                      >
-                        Use as the duration
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-            <div id="l-body-fields" className={cn("space-y-2", bodyCollapsed && "hidden")}>
-              <BodyEditor
-                key={`${itemId}:${bodySeed}`}
-                initialText={bodyRef.current}
-                contentFormat={contentFormat}
-                onTextChange={onTextChange}
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="l-format" className="text-xs text-muted-foreground">
-                    Stored as
-                  </Label>
-                  <Select
-                    value={contentFormat}
-                    onValueChange={(value) => setContentFormat(value as LessonContentFormat)}
-                  >
-                    <SelectTrigger id="l-format" className="h-7 w-36 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FORMATS.map((format) => (
-                        <SelectItem key={format} value={format}>
-                          {FORMAT_LABEL[format]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* The format is recorded with the text now. It used to be
-                    markdown by the editor's habit and nothing else, which left a
-                    renderer free to guess wrong. */}
-                <p className="flex-1 text-xs text-muted-foreground">
-                  Written down with the text, so whatever displays this later does not have to
-                  guess.
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
         {sourceType === "URL" && (
           <section className="space-y-1.5">
             <Label htmlFor="l-url">Where it is</Label>
@@ -1300,6 +1195,128 @@ function LessonEditor({
             </div>
           </section>
         )}
+
+        {/* Shown for every lesson now, not only written ones. Under a video it
+            is the notes; on its own it is the lesson. It stays below the file
+            section and above the attachments because that is the order a
+            student meets the three of them in. */}
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 w-6 px-0"
+                aria-expanded={!bodyCollapsed}
+                aria-controls="l-body-fields"
+                aria-label={bodyCollapsed ? "Expand body" : "Collapse body"}
+                onClick={() => setBodyCollapsed((collapsed) => !collapsed)}
+              >
+                {bodyCollapsed ? (
+                  <ChevronRight className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </Button>
+              {/* The same editor either way, but not the same thing: on a
+                    written lesson this is the lesson, and beside a video or a
+                    link it is what accompanies it. */}
+              <Label>{sourceType === "INLINE" ? "Body" : "Notes"}</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => markdownInput.current?.click()}
+              >
+                <Upload className="h-3 w-3" />
+                Load from a file
+              </Button>
+              <input
+                ref={markdownInput}
+                type="file"
+                accept={MARKDOWN_ACCEPT}
+                className="hidden"
+                onChange={(e) => {
+                  const chosen = e.target.files?.[0] ?? null;
+                  // Cleared so that picking the same file twice in a row
+                  // still counts as a change.
+                  e.target.value = "";
+                  void loadMarkdownFile(chosen);
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {words.toLocaleString()} {words === 1 ? "word" : "words"}
+              </span>
+              {words > 0 && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>about {readingMinutes} min to read</span>
+                  {/* Not offered where something else already owns the
+                        duration. On a video or a recording the length is the
+                        runtime, taken from the file itself; overwriting it
+                        with how long the notes take to read would describe
+                        the wrong thing. */}
+                  {resourceType !== "VIDEO" &&
+                    resourceType !== "AUDIO" &&
+                    durationSeconds !== readingMinutes * 60 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          setMinutes(String(readingMinutes));
+                          setSeconds("");
+                        }}
+                      >
+                        Use as the duration
+                      </Button>
+                    )}
+                </>
+              )}
+            </div>
+          </div>
+          <div id="l-body-fields" className={cn("space-y-2", bodyCollapsed && "hidden")}>
+            <BodyEditor
+              key={`${itemId}:${bodySeed}`}
+              initialText={bodyRef.current}
+              contentFormat={contentFormat}
+              onTextChange={onTextChange}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="l-format" className="text-xs text-muted-foreground">
+                  Stored as
+                </Label>
+                <Select
+                  value={contentFormat}
+                  onValueChange={(value) => setContentFormat(value as LessonContentFormat)}
+                >
+                  <SelectTrigger id="l-format" className="h-7 w-36 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FORMATS.map((format) => (
+                      <SelectItem key={format} value={format}>
+                        {FORMAT_LABEL[format]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* The format is recorded with the text now. It used to be
+                    markdown by the editor's habit and nothing else, which left a
+                    renderer free to guess wrong. */}
+              <p className="flex-1 text-xs text-muted-foreground">
+                Written down with the text, so whatever displays this later does not have to guess.
+              </p>
+            </div>
+          </div>
+        </section>
 
         {stage && !error && (
           <div className="space-y-2 rounded-lg border bg-secondary/40 p-2.5">
