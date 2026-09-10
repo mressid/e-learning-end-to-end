@@ -1,3 +1,4 @@
+export * from "./assignment.api";
 export * from "./auth.api";
 export * from "./courses.api";
 export * from "./curriculum.api";

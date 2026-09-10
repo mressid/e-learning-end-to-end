@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  assignmentApi,
   curriculumApi,
   queryKeys,
   type CourseItemResponse,
@@ -180,6 +181,21 @@ export function useLessonQuery(courseId: string, itemId: string, enabled = true)
   return useQuery({
     queryKey: queryKeys.curriculum.lesson(courseId, itemId),
     queryFn: () => curriculumApi.lesson(itemId),
+    enabled: enabled && Boolean(itemId),
+    retry: false,
+  });
+}
+
+/**
+ * An assignment's brief.
+ *
+ * Same bargain as the lesson above: a 404 is an item nobody has written yet,
+ * so it is not retried and the caller reads `isError` as "empty".
+ */
+export function useAssignmentQuery(courseId: string, itemId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.curriculum.assignment(courseId, itemId),
+    queryFn: () => assignmentApi.assignment(itemId),
     enabled: enabled && Boolean(itemId),
     retry: false,
   });

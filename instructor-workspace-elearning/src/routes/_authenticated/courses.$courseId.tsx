@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Send, Undo2 } from "lucide-react";
+import { ArrowLeft, Eye, Send, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -137,6 +137,24 @@ function CoursePage() {
           >
             {status}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={sectionCount === 0}
+            asChild={sectionCount > 0}
+          >
+            {sectionCount > 0 ? (
+              <Link to="/courses/$courseId/preview" params={{ courseId }} search={{}}>
+                <Eye className="h-4 w-4" />
+                Preview
+              </Link>
+            ) : (
+              <>
+                <Eye className="h-4 w-4" />
+                Preview
+              </>
+            )}
+          </Button>
           <Button
             size="sm"
             variant={isPublished ? "outline" : "default"}

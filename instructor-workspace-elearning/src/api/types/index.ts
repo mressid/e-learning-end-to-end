@@ -31,6 +31,9 @@ export type LessonResponse = Schemas["LessonResponse"];
 export type SaveLessonRequest = Schemas["SaveLessonRequest"];
 export type UpdateLessonDetailsRequest = Schemas["UpdateLessonDetailsRequest"];
 
+// Assignments — the brief only; authoring them has no screen yet
+export type AssignmentResponse = Schemas["AssignmentResponse"];
+
 // Quizzes — settings, and the questions inside them
 export type QuizResponse = Schemas["QuizResponse"];
 export type SaveQuizRequest = Schemas["SaveQuizRequest"];

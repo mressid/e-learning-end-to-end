@@ -13,6 +13,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedCoursesCourseIdRouteImport } from './routes/_authenticated/courses.$courseId'
+import { Route as AuthenticatedCoursesCourseIdPreviewRouteImport } from './routes/_authenticated/courses.$courseId_.preview'
 import { Route as AuthenticatedCoursesCourseIdItemsItemIdRouteImport } from './routes/_authenticated/courses.$courseId_.items.$itemId'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -35,6 +36,12 @@ const AuthenticatedCoursesCourseIdRoute =
     path: '/courses/$courseId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedCoursesCourseIdPreviewRoute =
+  AuthenticatedCoursesCourseIdPreviewRouteImport.update({
+    id: '/courses/$courseId_/preview',
+    path: '/courses/$courseId/preview',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCoursesCourseIdItemsItemIdRoute =
   AuthenticatedCoursesCourseIdItemsItemIdRouteImport.update({
     id: '/courses/$courseId_/items/$itemId',
@@ -46,12 +53,14 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginRoute
   '/courses/$courseId': typeof AuthenticatedCoursesCourseIdRoute
+  '/courses/$courseId/preview': typeof AuthenticatedCoursesCourseIdPreviewRoute
   '/courses/$courseId/items/$itemId': typeof AuthenticatedCoursesCourseIdItemsItemIdRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AuthenticatedIndexRoute
   '/courses/$courseId': typeof AuthenticatedCoursesCourseIdRoute
+  '/courses/$courseId/preview': typeof AuthenticatedCoursesCourseIdPreviewRoute
   '/courses/$courseId/items/$itemId': typeof AuthenticatedCoursesCourseIdItemsItemIdRoute
 }
 export interface FileRoutesById {
@@ -60,20 +69,31 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/courses/$courseId': typeof AuthenticatedCoursesCourseIdRoute
+  '/_authenticated/courses/$courseId_/preview': typeof AuthenticatedCoursesCourseIdPreviewRoute
   '/_authenticated/courses/$courseId_/items/$itemId': typeof AuthenticatedCoursesCourseIdItemsItemIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/login' | '/courses/$courseId' | '/courses/$courseId/items/$itemId'
+    | '/'
+    | '/login'
+    | '/courses/$courseId'
+    | '/courses/$courseId/preview'
+    | '/courses/$courseId/items/$itemId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/' | '/courses/$courseId' | '/courses/$courseId/items/$itemId'
+  to:
+    | '/login'
+    | '/'
+    | '/courses/$courseId'
+    | '/courses/$courseId/preview'
+    | '/courses/$courseId/items/$itemId'
   id:
     | '__root__'
     | '/_authenticated'
     | '/login'
     | '/_authenticated/'
     | '/_authenticated/courses/$courseId'
+    | '/_authenticated/courses/$courseId_/preview'
     | '/_authenticated/courses/$courseId_/items/$itemId'
   fileRoutesById: FileRoutesById
 }
@@ -112,6 +132,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoursesCourseIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/courses/$courseId_/preview': {
+      id: '/_authenticated/courses/$courseId_/preview'
+      path: '/courses/$courseId/preview'
+      fullPath: '/courses/$courseId/preview'
+      preLoaderRoute: typeof AuthenticatedCoursesCourseIdPreviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/courses/$courseId_/items/$itemId': {
       id: '/_authenticated/courses/$courseId_/items/$itemId'
       path: '/courses/$courseId/items/$itemId'
@@ -125,12 +152,15 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedCoursesCourseIdRoute: typeof AuthenticatedCoursesCourseIdRoute
+  AuthenticatedCoursesCourseIdPreviewRoute: typeof AuthenticatedCoursesCourseIdPreviewRoute
   AuthenticatedCoursesCourseIdItemsItemIdRoute: typeof AuthenticatedCoursesCourseIdItemsItemIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedCoursesCourseIdRoute: AuthenticatedCoursesCourseIdRoute,
+  AuthenticatedCoursesCourseIdPreviewRoute:
+    AuthenticatedCoursesCourseIdPreviewRoute,
   AuthenticatedCoursesCourseIdItemsItemIdRoute:
     AuthenticatedCoursesCourseIdItemsItemIdRoute,
 }
