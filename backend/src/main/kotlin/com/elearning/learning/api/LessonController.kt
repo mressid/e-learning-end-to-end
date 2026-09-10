@@ -1,5 +1,6 @@
 package com.elearning.learning.api
 
+import com.elearning.learning.application.LessonDetailsCommand
 import com.elearning.learning.application.LessonService
 import com.elearning.learning.application.SaveLessonCommand
 import com.elearning.platform.media.StorageProperties
@@ -17,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -74,10 +76,39 @@ class LessonController(
         ),
     )
 
+    @PatchMapping
+    @Operation(
+        summary = "Describe a lesson without touching its content",
+        description = "The counterpart to PUT for a lesson made of blocks. PUT replaces the " +
+            "whole lesson including its material, which is right when the material is what " +
+            "you are editing and wrong when the content is the item's ordered resources: " +
+            "changing a duration should not mean re-sending a video. Creates the lesson if " +
+            "the item has none, so an item can be given blocks and a description without " +
+            "ever naming a primary material.",
+    )
+    fun updateDetails(
+        @PathVariable itemId: UUID,
+        @Valid @RequestBody request: UpdateLessonDetailsRequest,
+    ): LessonResponse = LessonResponse.of(
+        lessonService.updateDetails(
+            itemId,
+            LessonDetailsCommand(
+                describes = request.description != null,
+                description = request.description?.takeIf { it.isNotBlank() },
+                times = request.durationSeconds != null,
+                durationSeconds = request.durationSeconds,
+                completionRule = request.completionRule,
+            ),
+            editorId = currentUser.requireId(),
+        ),
+    )
+
     @GetMapping
     @Operation(
         summary = "Read a lesson",
-        description = "Course editors, or students with an active enrolment.",
+        description = "Course editors, or students with an active enrolment. `title`, " +
+            "`resourceType` and `sourceType` are null for a lesson made of blocks; read " +
+            "/items/{itemId}/resources for what it actually contains.",
     )
     fun get(@PathVariable itemId: UUID): LessonResponse =
         LessonResponse.of(lessonService.get(itemId, currentUser.requireId()))

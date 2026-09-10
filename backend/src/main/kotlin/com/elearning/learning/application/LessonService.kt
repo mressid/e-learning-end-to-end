@@ -2,6 +2,9 @@ package com.elearning.learning.application
 
 import com.elearning.learning.domain.CompletionRule
 import com.elearning.learning.domain.Lesson
+import com.elearning.learning.domain.ItemResource
+import com.elearning.learning.domain.ItemResourceId
+import com.elearning.learning.domain.RelationshipType
 import com.elearning.learning.domain.Resource
 import com.elearning.learning.domain.ResourceContent
 import com.elearning.learning.domain.ResourceContentType
@@ -10,6 +13,7 @@ import com.elearning.learning.domain.ResourceType
 import com.elearning.learning.domain.ResourceUrl
 import com.elearning.learning.domain.SourceType
 import com.elearning.learning.infrastructure.LessonRepository
+import com.elearning.learning.infrastructure.ItemResourceRepository
 import com.elearning.learning.infrastructure.ResourceContentRepository
 import com.elearning.learning.infrastructure.ResourceFileRepository
 import com.elearning.learning.infrastructure.ResourceRepository
@@ -44,6 +48,7 @@ class LessonService(
     private val files: ResourceFileRepository,
     private val urls: ResourceUrlRepository,
     private val contents: ResourceContentRepository,
+    private val itemAttachments: ItemResourceRepository,
     private val catalog: CourseCatalog,
     private val enrollmentService: EnrollmentService,
     private val mediaService: MediaService,
@@ -58,13 +63,14 @@ class LessonService(
         }
 
         val existing = lessons.findById(itemId).orElse(null)
-        val previous = existing?.let { resources.findById(it.primaryResourceId).orElse(null) }
+        val previous = existing?.primaryResourceId?.let { resources.findById(it).orElse(null) }
 
         val resource = writeMaterial(courseId, command, previous, editorId)
+        val resourceId = requireNotNull(resource.id)
 
         val lesson = existing
             ?.apply {
-                primaryResourceId = requireNotNull(resource.id)
+                primaryResourceId = resourceId
                 description = command.description
                 durationSeconds = command.durationSeconds
                 completionRule = command.completionRule ?: completionRule
@@ -72,14 +78,66 @@ class LessonService(
             ?: lessons.save(
                 Lesson(
                     courseItemId = itemId,
-                    primaryResourceId = requireNotNull(resource.id),
+                    primaryResourceId = resourceId,
                     description = command.description,
                     durationSeconds = command.durationSeconds,
                     completionRule = command.completionRule ?: CompletionRule.MANUAL,
                 ),
             )
 
+        // The material is the lesson's first block, so that everything an item
+        // teaches with is in one ordered list rather than one thing here and
+        // the rest somewhere else. Idempotent: saving a lesson twice does not
+        // attach it twice, and re-saving does not move it back to the front if
+        // an author has since put something above it.
+        attachAsBlock(itemId, resourceId)
+
         return view(lesson, resource)
+    }
+
+    /**
+     * Records the primary material as a block of its item.
+     *
+     * Placed at the end rather than the front, because by the time this runs on
+     * an existing lesson the author may have deliberately ordered things around
+     * it. Only a lesson's very first save puts it at position zero, which is
+     * the same place the migration put every lesson that predates blocks.
+     */
+    private fun attachAsBlock(itemId: UUID, resourceId: UUID) {
+        val id = ItemResourceId(itemId, resourceId)
+        if (itemAttachments.existsById(id)) return
+        itemAttachments.save(
+            ItemResource(id, RelationshipType.RESOURCE, itemAttachments.maxPosition(itemId) + 1),
+        )
+    }
+
+    /**
+     * Updates what belongs to the lesson rather than to its material.
+     *
+     * A separate verb from [upsert] on purpose. `PUT /lesson` replaces the
+     * whole lesson including its material, which is right when the material is
+     * what you are editing and wrong when the content is a list of blocks
+     * managed through the resource endpoints - there, describing a lesson
+     * should not require re-sending a video.
+     *
+     * Creates the lesson row if the item has none, so an item can be given
+     * blocks and a description without ever naming a primary material.
+     */
+    @Transactional
+    fun updateDetails(itemId: UUID, command: LessonDetailsCommand, editorId: UUID): LessonView {
+        val courseId = requireCourseOfLessonItem(itemId)
+        if (!catalog.canEdit(courseId, editorId)) {
+            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        }
+
+        val lesson = lessons.findById(itemId).orElseGet {
+            lessons.save(Lesson(courseItemId = itemId))
+        }
+        if (command.describes) lesson.description = command.description
+        if (command.times) lesson.durationSeconds = command.durationSeconds
+        command.completionRule?.let { lesson.completionRule = it }
+
+        return view(lesson, lesson.primaryResourceId?.let { resources.findById(it).orElse(null) })
     }
 
     /**
@@ -262,20 +320,25 @@ class LessonService(
         requireReadableLesson(itemId, viewerId)
         val lesson = lessons.findById(itemId)
             .orElseThrow { NotFoundException("LESSON_NOT_FOUND", "Lesson not found") }
-        val material = requireMaterial(lesson)
-        if (material.sourceType != SourceType.FILE) {
-            throw BusinessRuleException("LESSON_HAS_NO_FILE", "This lesson has no downloadable file")
-        }
-        val file = files.findById(lesson.primaryResourceId)
+        val material = resolveBlock(lesson) { it.sourceType == SourceType.FILE }
+            ?: throw BusinessRuleException("LESSON_HAS_NO_FILE", "This lesson has no downloadable file")
+        val file = files.findById(requireNotNull(material.id))
             .orElseThrow { NotFoundException("LESSON_FILE_MISSING", "Lesson file not found") }
         return mediaService.downloadUrlForAuthorizedCaller(file.mediaId)
     }
 
-    /** The media behind a lesson, for the playback path. Null unless it is a file. */
+    /** The media behind a lesson, for the playback path. Null unless it has a video. */
     @Transactional(readOnly = true)
     fun fileMediaIdOf(itemId: UUID): UUID? {
         val lesson = lessons.findById(itemId).orElse(null) ?: return null
-        return files.findById(lesson.primaryResourceId).orElse(null)?.mediaId
+        val material = resolveBlock(lesson) {
+            it.sourceType == SourceType.FILE && it.resourceType == ResourceType.VIDEO
+        }
+        // Falls back to any file, so a lesson whose single block is a file
+        // typed as something other than VIDEO behaves as it always did.
+            ?: resolveBlock(lesson) { it.sourceType == SourceType.FILE }
+            ?: return null
+        return files.findById(requireNotNull(material.id)).orElse(null)?.mediaId
     }
 
     /**
@@ -310,36 +373,85 @@ class LessonService(
         return courseId
     }
 
-    private fun requireMaterial(lesson: Lesson): Resource =
-        resources.findById(lesson.primaryResourceId)
-            .orElseThrow { NotFoundException("LESSON_CONTENT_MISSING", "Lesson content not found") }
+    private fun requireMaterial(lesson: Lesson): Resource? =
+        lesson.primaryResourceId?.let {
+            resources.findById(it)
+                .orElseThrow { NotFoundException("LESSON_CONTENT_MISSING", "Lesson content not found") }
+        }
 
-    private fun view(lesson: Lesson, material: Resource): LessonView {
-        val resourceId = lesson.primaryResourceId
+    /**
+     * The block a lesson-level request means.
+     *
+     * The pointer if there is one, and otherwise the first block in reading
+     * order that [matches] - the first video for a stream, the first file for a
+     * download. First rather than only, because a lesson may hold two videos
+     * and a request that named no block has to mean something; the block-level
+     * endpoints exist for when it matters which.
+     */
+    private fun resolveBlock(lesson: Lesson, matches: (Resource) -> Boolean): Resource? {
+        lesson.primaryResourceId
+            ?.let { resources.findById(it).orElse(null) }
+            ?.takeIf(matches)
+            ?.let { return it }
+
+        return itemAttachments.findByIdCourseItemIdOrderByPosition(lesson.courseItemId)
+            .asSequence()
+            .mapNotNull { resources.findById(it.id.resourceId).orElse(null) }
+            .firstOrNull(matches)
+    }
+
+    /**
+     * A lesson as its own row plus whichever block is its primary material.
+     *
+     * `material` is null for a lesson assembled entirely from blocks, which is
+     * every lesson made since an item became a list of them. The fields that
+     * described that one material go null with it: there is no single answer
+     * to "what kind of thing is this lesson" once it is a video and some notes
+     * and two downloads. Read the blocks for that.
+     */
+    private fun view(lesson: Lesson, material: Resource?): LessonView {
+        val resourceId = material?.id
         // Read whatever the sourceType, because writing is no longer only ever
         // the lesson itself: for an INLINE lesson this is the body, and for a
         // file or a link it is the notes that go with it.
-        val written = contents.findById(resourceId).orElse(null)
+        val written = resourceId?.let { contents.findById(it).orElse(null) }
         return LessonView(
             courseItemId = lesson.courseItemId,
-            title = material.title,
-            resourceType = material.resourceType,
-            sourceType = material.sourceType,
+            title = material?.title,
+            resourceType = material?.resourceType,
+            sourceType = material?.sourceType,
             description = lesson.description,
             durationSeconds = lesson.durationSeconds,
             completionRule = lesson.completionRule,
             content = written?.content,
             contentFormat = written?.contentType,
-            url = if (material.sourceType == SourceType.URL) {
+            url = if (material?.sourceType == SourceType.URL && resourceId != null) {
                 urls.findById(resourceId).orElse(null)?.url
             } else {
                 null
             },
             // Media ids stay internal: readers get a URL from contentUrl().
-            hasFile = material.sourceType == SourceType.FILE && files.findById(resourceId).isPresent,
+            hasFile = material?.sourceType == SourceType.FILE &&
+                resourceId != null &&
+                files.findById(resourceId).isPresent,
         )
     }
 }
+
+/**
+ * The lesson's own fields, each optional so a PATCH can name just one.
+ *
+ * `describes` and `times` exist because null is a meaningful value for both
+ * of the fields they guard - no description, and no stated duration - so
+ * absence and null have to be told apart.
+ */
+data class LessonDetailsCommand(
+    val describes: Boolean = false,
+    val description: String? = null,
+    val times: Boolean = false,
+    val durationSeconds: Int? = null,
+    val completionRule: CompletionRule? = null,
+)
 
 data class SaveLessonCommand(
     val title: String,
@@ -356,9 +468,10 @@ data class SaveLessonCommand(
 
 data class LessonView(
     val courseItemId: UUID,
-    val title: String,
-    val resourceType: ResourceType,
-    val sourceType: SourceType,
+    /** Null once a lesson is a list of blocks rather than one material. */
+    val title: String?,
+    val resourceType: ResourceType?,
+    val sourceType: SourceType?,
     val description: String?,
     val durationSeconds: Int?,
     val completionRule: CompletionRule,

@@ -11,6 +11,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import tools.jackson.databind.ObjectMapper
@@ -394,6 +395,124 @@ class LessonApiTest(
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("LESSON_HAS_NO_FILE") }
         }
+    }
+
+    /**
+     * The shape a lesson takes from here: no primary material at all, just an
+     * ordered list of blocks and the lesson's own description of itself.
+     */
+    @Test
+    fun `a lesson can be described and built from blocks without a primary material`() {
+        val course = publishedCourseWithItem()
+
+        mockMvc.patch("/api/v1/items/${course.itemId}/lesson") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"description":"Recursion, three ways","durationSeconds":900,"completionRule":"VIEW"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.description") { value("Recursion, three ways") }
+            jsonPath("$.durationSeconds") { value(900) }
+            jsonPath("$.completionRule") { value("VIEW") }
+            // Nothing claims to be the lesson's one kind, because nothing is.
+            jsonPath("$.sourceType") { doesNotExist() }
+            jsonPath("$.resourceType") { doesNotExist() }
+        }
+
+        val blockId = objectMapper.readTree(
+            postJson(
+                "/api/v1/resources",
+                course.teacher,
+                """{"title":"Notes","resourceType":"DOCUMENT","sourceType":"INLINE","content":"# Start"}""",
+            ),
+        ).get("id").asString()
+
+        mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"resourceId":"$blockId"}"""
+        }.andExpect { status { isCreated() } }
+
+        mockMvc.get("/api/v1/items/${course.itemId}/resources") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].resource.content") { value("# Start") }
+        }
+    }
+
+    /**
+     * A lesson saved the old way is a block too, so the editor has one list to
+     * show rather than one material here and the rest somewhere else.
+     */
+    @Test
+    fun `saving a lesson the whole-material way also lists it as a block`() {
+        val course = publishedCourseWithItem()
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"body"}""",
+        ).andExpect { status { isOk() } }
+
+        // And saving again does not attach it twice.
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"DOCUMENT","sourceType":"INLINE","content":"body again"}""",
+        ).andExpect { status { isOk() } }
+
+        mockMvc.get("/api/v1/items/${course.itemId}/resources") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].resource.content") { value("body again") }
+        }
+    }
+
+    /**
+     * A request that names no block still has to mean something. With no
+     * primary set it resolves the first block that can answer.
+     */
+    @Test
+    fun `a lesson with no primary resolves its file from the blocks`() {
+        val course = publishedCourseWithItem()
+        val mediaId = uploadFile(course.teacher, "slides")
+
+        mockMvc.patch("/api/v1/items/${course.itemId}/lesson") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"description":"Slides only"}"""
+        }.andExpect { status { isOk() } }
+
+        // A text block first, so resolution has to skip past it.
+        listOf(
+            """{"title":"Intro","resourceType":"DOCUMENT","sourceType":"INLINE","content":"read me"}""",
+            """{"title":"Deck","resourceType":"DOCUMENT","sourceType":"FILE","mediaId":"$mediaId"}""",
+        ).forEach { json ->
+            val id = objectMapper.readTree(postJson("/api/v1/resources", course.teacher, json)).get("id").asString()
+            mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer ${course.teacher}")
+                content = """{"resourceId":"$id"}"""
+            }.andExpect { status { isCreated() } }
+        }
+
+        mockMvc.get("/api/v1/items/${course.itemId}/lesson/content-url") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `describing a lesson is for course staff only`() {
+        val course = publishedCourseWithItem()
+        val stranger = instructorTokenFor("stranger")
+        mockMvc.patch("/api/v1/items/${course.itemId}/lesson") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $stranger")
+            content = """{"description":"mine now"}"""
+        }.andExpect { status { isForbidden() } }
     }
 
     @Test

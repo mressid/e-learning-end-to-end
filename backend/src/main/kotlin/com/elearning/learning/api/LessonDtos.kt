@@ -59,12 +59,33 @@ data class SaveLessonRequest(
     val mediaId: UUID? = null,
 )
 
+@Schema(
+    name = "UpdateLessonDetailsRequest",
+    description = """
+        What belongs to the lesson rather than to any of its blocks. A field
+        left out is left alone, so describing a lesson does not mean re-sending
+        a video the way PUT does. The content itself is the item's resources.
+    """,
+)
+data class UpdateLessonDetailsRequest(
+    @field:Size(max = 5000) val description: String? = null,
+    @field:Min(0)
+    @get:Schema(description = "How long the author says it takes. For a video, its runtime.")
+    val durationSeconds: Int? = null,
+    val completionRule: CompletionRule? = null,
+)
+
 @Schema(name = "LessonResponse")
 data class LessonResponse(
     val courseItemId: UUID,
-    val title: String,
-    val resourceType: String,
-    val sourceType: String,
+    @get:Schema(
+        description = "The primary material's title, kind and where it lives. All null for a " +
+            "lesson assembled from blocks: there is no single answer once it is a video, some " +
+            "notes and two downloads. Read /items/{id}/resources for those.",
+    )
+    val title: String?,
+    val resourceType: String?,
+    val sourceType: String?,
     val description: String?,
     val durationSeconds: Int?,
     val completionRule: String,
@@ -83,8 +104,8 @@ data class LessonResponse(
         fun of(v: LessonView) = LessonResponse(
             courseItemId = v.courseItemId,
             title = v.title,
-            resourceType = v.resourceType.name,
-            sourceType = v.sourceType.name,
+            resourceType = v.resourceType?.name,
+            sourceType = v.sourceType?.name,
             description = v.description,
             durationSeconds = v.durationSeconds,
             completionRule = v.completionRule.name,

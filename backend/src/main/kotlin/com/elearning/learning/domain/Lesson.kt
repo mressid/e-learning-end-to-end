@@ -48,12 +48,19 @@ class Lesson(
     val courseItemId: UUID,
 
     /**
-     * The material itself. Never null: a lesson with nothing to teach is a
-     * course item that has not been written yet, which is the absence of this
-     * row rather than a row with an empty one.
+     * Which block a lesson-level request is about, or null to work it out.
+     *
+     * This used to hold the material, and was the only place a lesson's
+     * content could live. The content is now the ordered list of blocks in
+     * `item_resources`, and this points at one of them for the two questions
+     * that name no block: what `/lesson/content-url` and `/lesson/stream.m3u8`
+     * mean, and which runtime DURATION completion is describing.
+     *
+     * Null means a lesson assembled entirely from blocks, where those
+     * questions are answered by taking the first block that can answer them.
      */
-    @Column(name = "primary_resource_id", nullable = false)
-    var primaryResourceId: UUID,
+    @Column(name = "primary_resource_id")
+    var primaryResourceId: UUID? = null,
 
     @Column
     var description: String? = null,
