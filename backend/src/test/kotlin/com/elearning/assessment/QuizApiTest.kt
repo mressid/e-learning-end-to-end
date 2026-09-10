@@ -462,4 +462,25 @@ class QuizApiTest(
             jsonPath("$.code") { value("NOT_A_QUIZ_ITEM") }
         }
     }
+
+    @Test
+    fun `a shuffled quiz keeps one order for the length of an attempt`() {
+        val f = quizCourse("""{"title":"Quiz","randomizeQuestions":true}""")
+        repeat(6) { singleChoice(f, "Question $it") }
+        val student = enrolledStudent(f)
+
+        val started = startAttempt(student, f)
+        val attemptId = started.get("attemptId").asString()
+        val order = { node: JsonNode -> array(node.get("questions")).map { it.get("id").asString() } }
+
+        // Reloading mid-attempt used to reshuffle the paper under the student.
+        val reread = objectMapper.readTree(
+            mockMvc.get("/api/v1/attempts/$attemptId") {
+                header("Authorization", "Bearer $student")
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString,
+        )
+
+        assertThat(order(reread)).containsExactlyElementsOf(order(started))
+        assertThat(order(reread)).hasSize(6)
+    }
 }
