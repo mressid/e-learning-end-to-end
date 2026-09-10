@@ -190,12 +190,12 @@ function SidebarSectionItem({
             items.map((item) => {
               const isSelected = activeItemId === item.id;
               const Icon = itemIcon(item.type);
-              // A lesson opens its editor; a quiz or assignment has none yet,
-              // so those select themselves inside their section instead. Two
-              // literal <Link>s rather than one with spread props: the router
-              // types each destination against its own params and search, and a
-              // union of the two satisfies neither.
-              const isLesson = item.type === "LESSON";
+              // A lesson and a quiz each open an editor of their own; an
+              // assignment has none yet, so it selects itself inside its section
+              // instead. Two literal <Link>s rather than one with spread props:
+              // the router types each destination against its own params and
+              // search, and a union of the two satisfies neither.
+              const hasEditor = item.type === "LESSON" || item.type === "QUIZ";
               const rowClass = cn(
                 "group/item flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition-all rtl:text-right",
                 isSelected
@@ -224,7 +224,7 @@ function SidebarSectionItem({
                 </>
               );
 
-              return isLesson ? (
+              return hasEditor ? (
                 <Link
                   key={item.id}
                   to="/courses/$courseId/items/$itemId"
