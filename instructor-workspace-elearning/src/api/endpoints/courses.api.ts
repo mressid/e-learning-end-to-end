@@ -52,6 +52,24 @@ export const coursesApi = {
     return data;
   },
 
+  /**
+   * Points the course at an already-uploaded image.
+   *
+   * The media has to have been uploaded with `PUBLIC` visibility. A thumbnail
+   * is shown in catalogue listings to people who have not enrolled and may not
+   * even be signed in, so it needs a stable URL rather than one that expires —
+   * which is the one case on this platform where the public bucket is the
+   * right answer rather than a shortcut around the enrolment check.
+   */
+  async setThumbnail(courseId: string, mediaId: string): Promise<CourseResponse> {
+    const { data, error } = await apiClient.POST("/api/v1/courses/{id}/thumbnail", {
+      params: { path: { id: courseId } },
+      body: { mediaId },
+    });
+    if (error || !data) throw parseApiError(error);
+    return data;
+  },
+
   /** Refused unless the course has at least one item to teach. */
   async publish(courseId: string): Promise<CourseResponse> {
     const { data, error } = await apiClient.POST("/api/v1/courses/{id}/publish", {

@@ -5,6 +5,8 @@ import { toast } from "sonner";
 
 import { useMyCoursesQuery, useCreateCourseMutation } from "@/hooks/queries";
 import { parseApiError, type CourseResponse } from "@/api";
+import { MEDIA_FRAME, MEDIA_STILL } from "@/lib/media-frame";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/workspace/PageHeader";
 import { Pager } from "@/components/workspace/Pager";
 import { FloatingDetailSheet } from "@/components/workspace/FloatingDetailSheet";
@@ -106,18 +108,26 @@ function CourseCard({ course }: { course: CourseResponse }) {
       params={{ courseId: course.id ?? "" }}
       className="card-surface group flex flex-col gap-2 p-4 transition-colors hover:border-primary/40"
     >
-      <div className="flex items-start justify-between gap-2">
-        <span
-          aria-hidden
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
-        >
-          <BookOpen className="h-4.5 w-4.5" />
-        </span>
+      {/* Always the same 16:9 box, thumbnail or not, so a row of cards lines
+          up whether or not anyone has got round to setting the picture. The
+          status rides in the corner of it rather than on a row of its own,
+          which is where a card of this kind is read as putting it. */}
+      <div className={cn(MEDIA_FRAME, "relative grid place-items-center bg-muted/40")}>
+        {course.thumbnailUrl ? (
+          <img
+            src={course.thumbnailUrl}
+            alt=""
+            loading="lazy"
+            className={cn(MEDIA_STILL, "transition-transform group-hover:scale-[1.02]")}
+          />
+        ) : (
+          <BookOpen aria-hidden className="h-6 w-6 text-muted-foreground" />
+        )}
         <Badge
           variant={
             status === "PUBLISHED" ? "default" : status === "DRAFT" ? "secondary" : "outline"
           }
-          className="h-5 px-1.5 text-[10px] font-semibold uppercase tracking-wider"
+          className="absolute right-2 top-2 h-5 px-1.5 text-[10px] font-semibold uppercase tracking-wider"
         >
           {status}
         </Badge>

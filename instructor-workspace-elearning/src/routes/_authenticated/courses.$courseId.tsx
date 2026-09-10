@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/workspace/PageHeader";
 import { CurriculumBoard } from "@/components/workspace/CurriculumBoard";
 import { SectionFocus } from "@/components/workspace/SectionFocus";
 import { ResourcePanel } from "@/components/workspace/ResourcePanel";
+import { CourseThumbnail } from "@/components/workspace/CourseThumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -351,48 +352,60 @@ function CourseOverview({
         </Button>
       </form>
 
-      <section className="card-surface h-fit space-y-3 p-4 sm:p-5">
-        <h2 className="text-sm font-semibold">At a glance</h2>
-        <dl className="space-y-2.5 text-xs">
-          <Fact label="Status" value={course.status ?? "DRAFT"} />
-          <Fact label="Sections" value={String(sectionCount)} />
-          <Fact label="Level" value={course.level ? levelLabel(course.level) : "Not set"} />
-          <Fact label="Language" value={course.language || "Not set"} />
-          <Fact
-            label="Access"
-            value={course.accessDurationDays ? `${course.accessDurationDays} days` : "Never lapses"}
-          />
-          <Fact label="Created" value={formatDate(course.createdAt)} />
-          <Fact
-            label="Published"
-            value={course.publishedAt ? formatDate(course.publishedAt) : "Not yet"}
-          />
-          <Fact label="Slug" value={course.slug || "—"} mono />
-        </dl>
+      <div className="space-y-4">
+        {/* Outside the form on purpose, the way attaching a resource to a
+            lesson is: choosing an image uploads and applies it there and then,
+            so putting it beside fields that only take effect on Save would be
+            claiming it works the same way. */}
+        <section className="card-surface p-4 sm:p-5">
+          <CourseThumbnail courseId={courseId} thumbnailUrl={course.thumbnailUrl} />
+        </section>
 
-        {course.categories?.length || course.tags?.length ? (
-          <div className="space-y-2 border-t pt-3">
-            {/* Read-only here on purpose: the catalogue's vocabulary is the
+        <section className="card-surface h-fit space-y-3 p-4 sm:p-5">
+          <h2 className="text-sm font-semibold">At a glance</h2>
+          <dl className="space-y-2.5 text-xs">
+            <Fact label="Status" value={course.status ?? "DRAFT"} />
+            <Fact label="Sections" value={String(sectionCount)} />
+            <Fact label="Level" value={course.level ? levelLabel(course.level) : "Not set"} />
+            <Fact label="Language" value={course.language || "Not set"} />
+            <Fact
+              label="Access"
+              value={
+                course.accessDurationDays ? `${course.accessDurationDays} days` : "Never lapses"
+              }
+            />
+            <Fact label="Created" value={formatDate(course.createdAt)} />
+            <Fact
+              label="Published"
+              value={course.publishedAt ? formatDate(course.publishedAt) : "Not yet"}
+            />
+            <Fact label="Slug" value={course.slug || "—"} mono />
+          </dl>
+
+          {course.categories?.length || course.tags?.length ? (
+            <div className="space-y-2 border-t pt-3">
+              {/* Read-only here on purpose: the catalogue's vocabulary is the
                 administrators' to set, and an instructor picking from it is a
                 screen this workspace does not have yet. */}
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Catalogue
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {course.categories?.map((term) => (
-                <Badge key={term.id} variant="secondary" className="text-[10px]">
-                  {term.name}
-                </Badge>
-              ))}
-              {course.tags?.map((term) => (
-                <Badge key={term.id} variant="outline" className="text-[10px]">
-                  {term.name}
-                </Badge>
-              ))}
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Catalogue
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {course.categories?.map((term) => (
+                  <Badge key={term.id} variant="secondary" className="text-[10px]">
+                    {term.name}
+                  </Badge>
+                ))}
+                {course.tags?.map((term) => (
+                  <Badge key={term.id} variant="outline" className="text-[10px]">
+                    {term.name}
+                  </Badge>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : null}
-      </section>
+          ) : null}
+        </section>
+      </div>
     </div>
   );
 }
