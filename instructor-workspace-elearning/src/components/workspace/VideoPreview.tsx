@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { curriculumApi } from "@/api/endpoints/curriculum.api";
-import { parseApiError } from "@/api/client";
+import { API_BASE_URL, getAccessToken, parseApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { MEDIA_FRAME } from "@/lib/media-frame";
 
@@ -142,11 +142,18 @@ export function VideoPreview({
     if (goneRef.current) return;
     attemptRef.current = 0;
 
-    // A blob URL because the manifest arrives as text, not as a link. The
+    // A blob URL because the manifest arrives as text, not as a link: the
     // endpoint needs our bearer token and a <video> element has nowhere to put
-    // one; the segment references inside are already absolute and signed.
+    // one.
+    //
+    // The renditions inside it are paths on our own API rather than storage,
+    // because a rendition names its segments relatively and only this
+    // application can sign them. A blob URL has no base for a path to resolve
+    // against, so they are made absolute here — the player would otherwise
+    // resolve them against the page and ask the dev server for them.
+    const absolute = manifest.replace(/^\/api\/v1\//gm, `${API_BASE_URL}/api/v1/`);
     const blobUrl = URL.createObjectURL(
-      new Blob([manifest], { type: "application/vnd.apple.mpegurl" }),
+      new Blob([absolute], { type: "application/vnd.apple.mpegurl" }),
     );
     blobUrlRef.current = blobUrl;
     setSource({ kind: "hls", manifestUrl: blobUrl });
@@ -173,7 +180,18 @@ export function VideoPreview({
         return;
       }
 
-      const hls = new Hls({ enableWorker: true });
+      const hls = new Hls({
+        enableWorker: true,
+        // A rendition playlist is served by us and needs the session; the
+        // segments it names are presigned and must not carry a token. Read
+        // fresh each time rather than captured, so a refresh that happened
+        // since the player started is picked up.
+        xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+          if (!url.startsWith(API_BASE_URL)) return;
+          const token = getAccessToken();
+          if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        },
+      });
       hlsRef.current = hls;
       hls.loadSource(source.manifestUrl);
       hls.attachMedia(video);
