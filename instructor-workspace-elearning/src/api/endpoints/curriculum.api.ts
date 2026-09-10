@@ -148,6 +148,29 @@ export const curriculumApi = {
     return data.contentUrl;
   },
 
+  /**
+   * The HLS manifest for a lesson's video, as text.
+   *
+   * Returned as a string rather than a URL because the endpoint needs our
+   * bearer token and a `<video>` element cannot carry one. The caller turns
+   * this into a blob URL; the segment references inside are already absolute
+   * and signed for whoever asked, so they need no authorisation of their own.
+   *
+   * Throws with code `STREAM_NOT_READY` while the encode is still running,
+   * which is a state to render rather than an error to report — the original
+   * file is still playable from `contentUrl` in the meantime.
+   */
+  async streamManifest(itemId: string): Promise<string> {
+    const { data, error } = await apiClient.GET("/api/v1/items/{itemId}/lesson/stream.m3u8", {
+      params: { path: { itemId } },
+      parseAs: "text",
+    });
+    if (error || typeof data !== "string" || !data.trim()) {
+      throw parseApiError(error ?? { message: "This lesson has no playable video." });
+    }
+    return data;
+  },
+
   /** Creates the lesson or replaces it; there is no partial update. */
   async saveLesson(itemId: string, body: SaveLessonRequest): Promise<LessonResponse> {
     const { data, error } = await apiClient.PUT("/api/v1/items/{itemId}/lesson", {

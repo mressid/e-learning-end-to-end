@@ -40,6 +40,7 @@ import {
 } from "@/api";
 import { renderLessonBody } from "@/lib/render-lesson-body";
 import { ResourcePanel } from "@/components/workspace/ResourcePanel";
+import { VideoPreview } from "@/components/workspace/VideoPreview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,38 @@ function acceptFor(resourceType: ResourceType): string | undefined {
   if (resourceType === "AUDIO") return "audio/*";
   if (resourceType === "IMAGE") return "image/*";
   return undefined;
+}
+
+/**
+ * How long a chosen video or audio file actually runs.
+ *
+ * The encoder works this out too, but only after the upload and the encode
+ * have both finished — which is minutes too late to be any use to the person
+ * filling in the form. The browser already has the metadata as soon as the
+ * file is picked, so ask it rather than making someone read the length off
+ * their own player and type it in.
+ *
+ * Resolves to null on anything it cannot read; a duration is a convenience
+ * here, not a requirement, and a codec the browser will not open is no reason
+ * to stop someone uploading a file the server can still encode.
+ */
+function probeMediaDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement("video");
+    const done = (value: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => {
+      // Infinity turns up for streams whose length the container does not
+      // declare, and is worse than no answer at all.
+      done(Number.isFinite(probe.duration) ? Math.round(probe.duration) : null);
+    };
+    probe.onerror = () => done(null);
+    probe.src = url;
+  });
 }
 
 const COMPLETION_RULES: LessonCompletionRule[] = ["MANUAL", "VIEW", "DURATION"];
@@ -795,6 +828,26 @@ function LessonEditor({
   }, [bodySnapshot]);
   const readingMinutes = useMemo(() => Math.max(1, Math.round(words / WORDS_PER_MINUTE)), [words]);
 
+  /**
+   * Takes the chosen file, and for a video or an audio track fills in how long
+   * it runs.
+   *
+   * Overwrites whatever was in the duration fields rather than only filling
+   * them when empty. Choosing a file is a deliberate act that changes what the
+   * duration is *of*, so leaving the previous video's length sitting there
+   * would be the wrong kind of respect for a typed-in value. It stays editable
+   * afterwards.
+   */
+  const chooseFile = async (chosen: File | null) => {
+    setFile(chosen);
+    if (!chosen || (resourceType !== "VIDEO" && resourceType !== "AUDIO")) return;
+
+    const duration = await probeMediaDuration(chosen);
+    if (duration === null) return;
+    setMinutes(String(Math.floor(duration / 60)));
+    setSeconds(String(duration % 60));
+  };
+
   const openCurrentFile = async () => {
     try {
       const signed = await curriculumApi.contentUrl(itemId);
@@ -1178,13 +1231,21 @@ function LessonEditor({
               </div>
             )}
 
+            {/* A freshly chosen file wins: it is what Save is about to upload,
+                so it is the thing worth checking. Otherwise this previews what
+                the lesson already holds, and shows nothing at all until there
+                is one or the other. */}
+            {resourceType === "VIDEO" && (file || hasFileAlready) && (
+              <VideoPreview itemId={itemId} localFile={file} />
+            )}
+
             <div className="rounded-xl border border-dashed p-8 text-center">
               <FileUp className="mx-auto h-6 w-6 text-muted-foreground" />
               <Input
                 id="l-file"
                 type="file"
                 accept={acceptFor(resourceType)}
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => void chooseFile(e.target.files?.[0] ?? null)}
                 className="mx-auto mt-3 max-w-sm"
               />
               {file ? (
