@@ -1,5 +1,15 @@
 import { useState, type FormEvent } from "react";
-import { Download, FileText, Link2, NotebookPen, Trash2, Upload, Video } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileText,
+  Link2,
+  NotebookPen,
+  Trash2,
+  Upload,
+  Video,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -101,12 +111,39 @@ export function LessonBlocks({ itemId }: { itemId: string }) {
   const { data, isLoading, isError, error, refetch } = useResourcesQuery("item", itemId);
   const reorder = useReorderItemResourcesMutation(itemId);
 
+  // Held here rather than in each card so that one control can fold the lot.
+  // A block carries a video player and an editor the height of a screen, so
+  // four of them is a page nobody can see the shape of; folded, the list is
+  // the outline of the lesson.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+
   const rows = data ?? [];
   const ids = rows.map((row) => row.resource?.id ?? "").filter(Boolean);
+  const allFolded = ids.length > 0 && ids.every((id) => folded.has(id));
+
+  const toggle = (id: string) =>
+    setFolded((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold">Lesson content</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Lesson content</h3>
+        {ids.length > 1 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setFolded(allFolded ? new Set() : new Set(ids))}
+          >
+            {allFolded ? "Expand all" : "Collapse all"}
+          </Button>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -148,6 +185,8 @@ export function LessonBlocks({ itemId }: { itemId: string }) {
                     position={position}
                     handle={handle}
                     isDragging={isDragging}
+                    collapsed={folded.has(resourceId)}
+                    onToggleCollapsed={() => toggle(resourceId)}
                   />
                 )}
               </SortableRow>
@@ -167,12 +206,16 @@ function BlockCard({
   position,
   handle,
   isDragging,
+  collapsed,
+  onToggleCollapsed,
 }: {
   itemId: string;
   row: AttachedResourceResponse;
   position: number;
   handle: DragHandleProps;
   isDragging: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const resource = row.resource;
   const update = useUpdateResourceMutation("item", itemId);
@@ -194,6 +237,7 @@ function BlockCard({
   // is meaningful without it, so there is nothing worth rendering either.
   if (!resource?.id) return null;
   const resourceId = resource.id;
+  const fieldsId = `block-fields-${resourceId}`;
 
   const savedTitle = resource.title ?? "";
   const savedContent = resource.content ?? "";
@@ -282,6 +326,22 @@ function BlockCard({
               className="h-7 min-w-0 flex-1 text-sm"
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 px-0"
+                aria-expanded={!collapsed}
+                aria-controls={fieldsId}
+                aria-label={collapsed ? "Expand this block" : "Collapse this block"}
+                onClick={onToggleCollapsed}
+              >
+                {collapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </Button>
               <Button size="sm" disabled={!canSave} onClick={save}>
                 {update.isPending ? "Saving…" : "Save"}
               </Button>
@@ -297,71 +357,83 @@ function BlockCard({
             </div>
           </div>
 
-          {sourceType === "INLINE" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-end">
-                <Select
-                  value={contentType}
-                  onValueChange={(v) => setContentType(v as LessonContentFormat)}
-                >
-                  <SelectTrigger className="h-7 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FORMATS.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {FORMAT_LABEL[f]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* Hidden rather than unmounted, the same choice the whole-page body
+              editor made and for the same reason: `BodyEditor` holds the live
+              text, the Preview/Write choice, the caret and the textarea's
+              scroll offset in state that only survives while it is mounted.
+              Folding a block mid-edit would throw all of that away and hand
+              back an empty rewind on unfold. */}
+          <div id={fieldsId} className={cn("space-y-2.5", collapsed && "hidden")}>
+            {sourceType === "INLINE" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-end">
+                  <Select
+                    value={contentType}
+                    onValueChange={(v) => setContentType(v as LessonContentFormat)}
+                  >
+                    <SelectTrigger className="h-7 w-32 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FORMATS.map((f) => (
+                        <SelectItem key={f} value={f}>
+                          {FORMAT_LABEL[f]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* The editor the whole-page lesson used, rather than a plainer
+                {/* The editor the whole-page lesson used, rather than a plainer
                   one written for here: it carries the markdown toolbar, and
                   losing that to a refactor would be a quiet downgrade for
                   anyone who writes in markdown. Re-keyed on the format so a
                   switch to HTML swaps the toolbar in and out cleanly, since it
                   reads its text once at mount. */}
-              <BodyEditor
-                key={`${resourceId}:${contentType}`}
-                initialText={content}
-                contentFormat={contentType}
-                onTextChange={setContent}
-                minHeight="min-h-[18rem]"
-              />
-            </div>
-          )}
-
-          {sourceType === "URL" && (
-            <div className="space-y-1">
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
-              {url.trim() && !urlValid && (
-                <p className="text-xs text-destructive">Must start with http:// or https://.</p>
-              )}
-            </div>
-          )}
-
-          {sourceType === "FILE" && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="truncate">{resource.filename ?? "Uploaded file"}</span>
-                <span aria-hidden>·</span>
-                <span>{formatBytes(resource.sizeBytes)}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-1.5"
-                  onClick={() => void openDownload()}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Download
-                </Button>
+                <BodyEditor
+                  key={`${resourceId}:${contentType}`}
+                  initialText={content}
+                  contentFormat={contentType}
+                  onTextChange={setContent}
+                  minHeight="min-h-[18rem]"
+                />
               </div>
-              {isVideo && <VideoPreview itemId={itemId} />}
-            </div>
-          )}
+            )}
+
+            {sourceType === "URL" && (
+              <div className="space-y-1">
+                <Input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://…"
+                />
+                {url.trim() && !urlValid && (
+                  <p className="text-xs text-destructive">Must start with http:// or https://.</p>
+                )}
+              </div>
+            )}
+
+            {sourceType === "FILE" && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="truncate">{resource.filename ?? "Uploaded file"}</span>
+                  <span aria-hidden>·</span>
+                  <span>{formatBytes(resource.sizeBytes)}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-1.5"
+                    onClick={() => void openDownload()}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </div>
+                {isVideo && <VideoPreview itemId={itemId} />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
