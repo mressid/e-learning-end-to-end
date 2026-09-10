@@ -42,12 +42,20 @@ class TranscodeResultWriter(
         result.segments.forEach { segment ->
             storage.put(bucket, "$prefix/${segment.name}", segment.bytes, segment.contentType)
         }
-        val manifest = media.storeGenerated(
-            filename = "$prefix/index.m3u8",
+        // Stored at exactly this key, not under one derived from the name. A
+        // manifest names its segments by relative name, so the two have to be
+        // siblings; deriving a key put the manifest under `uploads/…` while the
+        // segments above sat under `hls/<job>/`, and every signed segment URL
+        // pointed at nothing. Presigning does not check a key exists, so that
+        // failed silently and only when somebody tried to watch.
+        val manifest = media.storeGeneratedAt(
+            objectKey = "$prefix/index.m3u8",
             contentType = "application/vnd.apple.mpegurl",
             bytes = result.manifest,
         )
-        val poster = result.poster?.let { media.storeGenerated("$prefix/poster.jpg", "image/jpeg", it) }
+        val poster = result.poster?.let {
+            media.storeGeneratedAt("$prefix/poster.jpg", "image/jpeg", it)
+        }
 
         // Written onto the file rather than onto whatever refers to it. One
         // upload used by two lessons is encoded once and both stream it.

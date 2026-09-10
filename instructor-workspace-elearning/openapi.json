@@ -1727,7 +1727,7 @@
     "/api/v1/admin/users/{userId}": {
       "get": {
         "description": "Requires `user.read`.",
-        "operationId": "get_5",
+        "operationId": "get_6",
         "parameters": [
           {
             "in": "path",
@@ -1763,7 +1763,7 @@
       },
       "patch": {
         "description": "Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.",
-        "operationId": "update_4",
+        "operationId": "update_5",
         "parameters": [
           {
             "in": "path",
@@ -3343,7 +3343,7 @@
     "/api/v1/courses/{id}": {
       "get": {
         "description": "Published courses are public. Drafts are visible only to the owner and its instructors.",
-        "operationId": "get_4",
+        "operationId": "get_5",
         "parameters": [
           {
             "in": "path",
@@ -3383,7 +3383,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_3",
+        "operationId": "update_4",
         "parameters": [
           {
             "in": "path",
@@ -3932,7 +3932,7 @@
       },
       "get": {
         "description": "Visible to anyone who can see the course. An item is addressable on its own - its lesson, quiz and assignment all hang off this id - so a page opened at one of those URLs can load the item it names.",
-        "operationId": "get_3",
+        "operationId": "get_4",
         "parameters": [
           {
             "in": "path",
@@ -3963,7 +3963,7 @@
       },
       "patch": {
         "description": "Only the fields you send change. The type is fixed at creation: a lesson and a quiz store different things, and switching would orphan them.",
-        "operationId": "update_2",
+        "operationId": "update_3",
         "parameters": [
           {
             "in": "path",
@@ -4249,7 +4249,7 @@
     },
     "/api/v1/items/{itemId}/lesson": {
       "get": {
-        "description": "Course editors, or students with an active enrolment.",
+        "description": "Course editors, or students with an active enrolment. `title`, `resourceType` and `sourceType` are null for a lesson made of blocks; read /items/{itemId}/resources for what it actually contains.",
         "operationId": "get",
         "parameters": [
           {
@@ -4280,6 +4280,52 @@
           }
         ],
         "summary": "Read a lesson",
+        "tags": [
+          "Lessons"
+        ]
+      },
+      "patch": {
+        "description": "The counterpart to PUT for a lesson made of blocks. PUT replaces the whole lesson including its material, which is right when the material is what you are editing and wrong when the content is the item's ordered resources: changing a duration should not mean re-sending a video. Creates the lesson if the item has none, so an item can be given blocks and a description without ever naming a primary material.",
+        "operationId": "updateDetails",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLessonDetailsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Describe a lesson without touching its content",
         "tags": [
           "Lessons"
         ]
@@ -4828,6 +4874,7 @@
     },
     "/api/v1/items/{itemId}/resources": {
       "get": {
+        "description": "This is the item's content, read top to bottom: the blocks a lesson is made of rather than a list of extras beside it.",
         "operationId": "itemResources",
         "parameters": [
           {
@@ -4900,6 +4947,97 @@
           }
         ],
         "summary": "Attach a resource to a course item",
+        "tags": [
+          "Resources"
+        ]
+      }
+    },
+    "/api/v1/items/{itemId}/resources/order": {
+      "put": {
+        "description": "The whole sequence is sent rather than one move: two authors dragging at once with relative moves converge on an order neither chose.",
+        "operationId": "reorderItemResources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderItemResourcesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Reordered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Names a resource that is not attached, or names one twice"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set the order of an item's blocks",
+        "tags": [
+          "Resources"
+        ]
+      }
+    },
+    "/api/v1/items/{itemId}/resources/{resourceId}": {
+      "delete": {
+        "description": "Removes the block from this item. The material itself survives, because it is a library material other courses may be using.",
+        "operationId": "detachFromItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Take a resource off an item",
         "tags": [
           "Resources"
         ]
@@ -5141,7 +5279,7 @@
     },
     "/api/v1/me/profile": {
       "get": {
-        "operationId": "get_2",
+        "operationId": "get_3",
         "responses": {
           "200": {
             "content": {
@@ -5165,7 +5303,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_1",
+        "operationId": "update_2",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5632,7 +5770,7 @@
     "/api/v1/resources/{resourceId}": {
       "get": {
         "description": "Its creator, or a participant of a course it is attached to.",
-        "operationId": "get_6",
+        "operationId": "get_2",
         "parameters": [
           {
             "in": "path",
@@ -5662,6 +5800,62 @@
           }
         ],
         "summary": "Read a resource",
+        "tags": [
+          "Resources"
+        ]
+      },
+      "patch": {
+        "description": "Allowed only to someone who can edit every course the resource is attached to. A material shared into a course you cannot edit is not yours to change from here, because nobody on the other side would see it happen.",
+        "operationId": "update_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateResourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceResponse"
+                }
+              }
+            },
+            "description": "Updated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not yours, or shared with a course you cannot edit"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Edit a resource",
         "tags": [
           "Resources"
         ]
@@ -6082,6 +6276,46 @@
           }
         ],
         "summary": "Attach a resource to a section",
+        "tags": [
+          "Resources"
+        ]
+      }
+    },
+    "/api/v1/sections/{sectionId}/resources/{resourceId}": {
+      "delete": {
+        "description": "The material itself survives; other courses may be using it.",
+        "operationId": "detachFromSection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sectionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Take a resource off a section",
         "tags": [
           "Resources"
         ]
@@ -7877,7 +8111,7 @@
               "string",
               "null"
             ],
-            "description": "Body of an INLINE lesson"
+            "description": "The lesson's writing: the body of an INLINE lesson, or the notes accompanying a file or a link. Rendered after the video and before the attachments."
           },
           "contentFormat": {
             "type": [
@@ -7907,13 +8141,23 @@
             "description": "Whether a file is attached; fetch it from /content-url"
           },
           "resourceType": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sourceType": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The primary material's title, kind and where it lives. All null for a lesson assembled from blocks: there is no single answer once it is a video, some notes and two downloads. Read /items/{id}/resources for those."
           },
           "url": {
             "type": [
@@ -8880,6 +9124,19 @@
           "name"
         ]
       },
+      "ReorderItemResourcesRequest": {
+        "type": "object",
+        "description": "The blocks of an item, in the order they should be read. Anything attached but not named keeps its relative order behind them.",
+        "properties": {
+          "resourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
       "ReorderRequest": {
         "type": "object",
         "description": "Must list every child exactly once",
@@ -9155,7 +9412,7 @@
       },
       "SaveLessonRequest": {
         "type": "object",
-        "description": "\n        What the lesson teaches with is described by two independent fields.\n        `resourceType` is what the material is; `sourceType` is where it lives,\n        and decides which content field is required: FILE needs `mediaId` -\n        except when replacing nothing, where the file already attached is kept -\n        URL needs `url`, INLINE needs `content`.\n    ",
+        "description": "\n        What the lesson teaches with is described by two independent fields.\n        `resourceType` is what the material is; `sourceType` is where it lives,\n        and decides which content field is required: FILE needs `mediaId` -\n        except when replacing nothing, where the file already attached is kept -\n        URL needs `url`, INLINE needs `content`.\n\n        `content` is also accepted alongside a file or a link, where it is the\n        writing that goes with the material rather than the material itself -\n        the notes under a video. Optional there, and omitting it removes what\n        was there before.\n    ",
         "properties": {
           "completionRule": {
             "type": [
@@ -9173,7 +9430,7 @@
               "string",
               "null"
             ],
-            "description": "The body, for an INLINE lesson"
+            "description": "The body of an INLINE lesson, or the notes beside a file or link"
           },
           "contentFormat": {
             "type": [
@@ -9822,6 +10079,40 @@
           }
         }
       },
+      "UpdateLessonDetailsRequest": {
+        "type": "object",
+        "description": "\n        What belongs to the lesson rather than to any of its blocks. A field\n        left out is left alone, so describing a lesson does not mean re-sending\n        a video the way PUT does. The content itself is the item's resources.\n    ",
+        "properties": {
+          "completionRule": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MANUAL",
+              "VIEW",
+              "DURATION"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 5000,
+            "minLength": 0
+          },
+          "durationSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How long the author says it takes. For a video, its runtime.",
+            "minimum": 0
+          }
+        }
+      },
       "UpdateProfileRequest": {
         "type": "object",
         "description": "Only the fields present are changed",
@@ -9870,6 +10161,51 @@
               "null"
             ],
             "maxLength": 64,
+            "minLength": 0
+          }
+        }
+      },
+      "UpdateResourceRequest": {
+        "type": "object",
+        "description": "\n        A partial edit: a field left out is left alone, unlike the lesson\n        endpoint where a missing field is a cleared one. `sourceType` cannot\n        change - the content of each lives in a different table, so that is a\n        different resource rather than an edit of this one - and neither can\n        the bytes of a file, which is a fresh upload.\n    ",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKDOWN",
+              "HTML",
+              "PLAIN_TEXT"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
             "minLength": 0
           }
         }

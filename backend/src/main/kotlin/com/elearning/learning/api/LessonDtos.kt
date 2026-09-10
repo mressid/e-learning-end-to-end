@@ -19,6 +19,11 @@ import java.util.UUID
         and decides which content field is required: FILE needs `mediaId` -
         except when replacing nothing, where the file already attached is kept -
         URL needs `url`, INLINE needs `content`.
+
+        `content` is also accepted alongside a file or a link, where it is the
+        writing that goes with the material rather than the material itself -
+        the notes under a video. Optional there, and omitting it removes what
+        was there before.
     """,
 )
 data class SaveLessonRequest(
@@ -41,7 +46,7 @@ data class SaveLessonRequest(
 
     val completionRule: CompletionRule? = null,
 
-    @get:Schema(description = "The body, for an INLINE lesson")
+    @get:Schema(description = "The body of an INLINE lesson, or the notes beside a file or link")
     val content: String? = null,
 
     @get:Schema(description = "How to read `content`; defaults to MARKDOWN")
@@ -54,16 +59,40 @@ data class SaveLessonRequest(
     val mediaId: UUID? = null,
 )
 
+@Schema(
+    name = "UpdateLessonDetailsRequest",
+    description = """
+        What belongs to the lesson rather than to any of its blocks. A field
+        left out is left alone, so describing a lesson does not mean re-sending
+        a video the way PUT does. The content itself is the item's resources.
+    """,
+)
+data class UpdateLessonDetailsRequest(
+    @field:Size(max = 5000) val description: String? = null,
+    @field:Min(0)
+    @get:Schema(description = "How long the author says it takes. For a video, its runtime.")
+    val durationSeconds: Int? = null,
+    val completionRule: CompletionRule? = null,
+)
+
 @Schema(name = "LessonResponse")
 data class LessonResponse(
     val courseItemId: UUID,
-    val title: String,
-    val resourceType: String,
-    val sourceType: String,
+    @get:Schema(
+        description = "The primary material's title, kind and where it lives. All null for a " +
+            "lesson assembled from blocks: there is no single answer once it is a video, some " +
+            "notes and two downloads. Read /items/{id}/resources for those.",
+    )
+    val title: String?,
+    val resourceType: String?,
+    val sourceType: String?,
     val description: String?,
     val durationSeconds: Int?,
     val completionRule: String,
-    @get:Schema(description = "Body of an INLINE lesson")
+    @get:Schema(
+        description = "The lesson's writing: the body of an INLINE lesson, or the notes " +
+            "accompanying a file or a link. Rendered after the video and before the attachments.",
+    )
     val content: String?,
     val contentFormat: String?,
     @get:Schema(description = "Target of a URL lesson")
@@ -75,8 +104,8 @@ data class LessonResponse(
         fun of(v: LessonView) = LessonResponse(
             courseItemId = v.courseItemId,
             title = v.title,
-            resourceType = v.resourceType.name,
-            sourceType = v.sourceType.name,
+            resourceType = v.resourceType?.name,
+            sourceType = v.sourceType?.name,
             description = v.description,
             durationSeconds = v.durationSeconds,
             completionRule = v.completionRule.name,

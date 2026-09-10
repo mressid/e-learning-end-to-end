@@ -4,8 +4,10 @@ import {
   mediaApi,
   queryKeys,
   type AttachResourceRequest,
+  type AttachedResourceResponse,
   type CreateResourceRequest,
   type ResourceScope,
+  type UpdateResourceRequest,
 } from "@/api";
 
 export function useResourcesQuery(scope: ResourceScope, ownerId: string, enabled = true) {
@@ -60,12 +62,68 @@ export function useAddResourceMutation(scope: ResourceScope, ownerId: string) {
   });
 }
 
-/** Course scope only — the API offers no detach for sections or items. */
-export function useDetachCourseResourceMutation(courseId: string) {
+export function useDetachResourceMutation(scope: ResourceScope, ownerId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (resourceId: string) => resourcesApi.detachFromCourse(courseId, resourceId),
+    mutationFn: (resourceId: string) => resourcesApi.detach(scope, ownerId, resourceId),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.of("course", courseId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.of(scope, ownerId) }),
+  });
+}
+
+/** Kept for the course panel, which had this before the other scopes could detach. */
+export function useDetachCourseResourceMutation(courseId: string) {
+  return useDetachResourceMutation("course", courseId);
+}
+
+/**
+ * Editing one block in place.
+ *
+ * Refused with `RESOURCE_SHARED` when the material is also used by a course
+ * the editor cannot reach. That is not a failure to retry, so callers should
+ * show what the server said rather than a generic message.
+ */
+export function useUpdateResourceMutation(scope: ResourceScope, ownerId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ resourceId, ...body }: UpdateResourceRequest & { resourceId: string }) =>
+      resourcesApi.update(resourceId, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.of(scope, ownerId) }),
+  });
+}
+
+/**
+ * Reordering an item's blocks.
+ *
+ * The new order is written into the cache before the request goes, because a
+ * dragged row that springs back to where it was while the network thinks about
+ * it reads as a failed drag. The refetch on settle is what corrects it if the
+ * server disagreed.
+ */
+export function useReorderItemResourcesMutation(itemId: string) {
+  const queryClient = useQueryClient();
+  const key = queryKeys.resources.of("item", itemId);
+
+  return useMutation({
+    mutationFn: (resourceIds: string[]) => resourcesApi.reorderItemResources(itemId, resourceIds),
+    onMutate: async (resourceIds) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AttachedResourceResponse[]>(key);
+      if (previous) {
+        const byId = new Map(previous.map((row) => [row.resource?.id, row]));
+        queryClient.setQueryData(
+          key,
+          resourceIds
+            .map((id) => byId.get(id))
+            .filter(Boolean as unknown as (r: unknown) => boolean),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _ids, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 }

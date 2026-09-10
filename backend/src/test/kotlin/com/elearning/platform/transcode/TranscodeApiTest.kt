@@ -208,7 +208,7 @@ class TranscodeApiTest(
     }
 
     @Test
-    fun `playback returns a manifest whose segment URLs are signed`() {
+    fun `playback rewrites the master to renditions this application serves`() {
         val teacher = instructorTokenFor("teacher")
         val student = tokenFor("student")
         val (itemId, mediaId) = videoLesson(teacher, student, "playable-${System.nanoTime()}.mp4")
@@ -219,11 +219,72 @@ class TranscodeApiTest(
         }.andExpect { status { isOk() } }.andReturn().response.contentAsString
 
         assertThat(manifest).startsWith("#EXTM3U")
-        // Relative names have become absolute signed URLs; the enrolment check
-        // would be a formality if a copied manifest kept working forever.
+        // A bare relative name would be resolved against storage, where it is
+        // not signed and would be refused.
         assertThat(manifest).doesNotContain("\nv0.m3u8")
-        assertThat(manifest).contains("http")
-        assertThat(manifest).contains("X-Amz-Signature")
+        assertThat(manifest).contains("/api/v1/items/$itemId/lesson/stream/v0.m3u8")
+    }
+
+    /**
+     * The hop that used to break playback.
+     *
+     * Signing only the master got a player exactly one step: it followed a
+     * signed link to a rendition, read the relative `v0_000.ts` out of it, and
+     * asked storage for that name with no signature, because a query string
+     * does not survive relative resolution.
+     */
+    @Test
+    fun `a rendition comes back with its segments signed`() {
+        val teacher = instructorTokenFor("teacher")
+        val student = tokenFor("student")
+        val (itemId, mediaId) = videoLesson(teacher, student, "rendition-${System.nanoTime()}.mp4")
+        runJobFor(mediaId, itemId)
+
+        val variant = mockMvc.get("/api/v1/items/$itemId/lesson/stream/v0.m3u8") {
+            header("Authorization", "Bearer $student")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+
+        assertThat(variant).startsWith("#EXTM3U")
+        assertThat(variant).doesNotContain("\nv0_000.ts")
+        assertThat(variant).contains("X-Amz-Signature")
+    }
+
+    /**
+     * Being allowed to watch a lesson is not being allowed to name objects in
+     * the media bucket. The name is checked against what the master actually
+     * references, so neither a traversal nor a plausible guess gets through.
+     */
+    @Test
+    fun `a rendition name the master does not reference is refused`() {
+        val teacher = instructorTokenFor("teacher")
+        val student = tokenFor("student")
+        val (itemId, mediaId) = videoLesson(teacher, student, "guessing-${System.nanoTime()}.mp4")
+        runJobFor(mediaId, itemId)
+
+        listOf("v9.m3u8", "source.mp4").forEach { name ->
+            mockMvc.get("/api/v1/items/$itemId/lesson/stream/$name") {
+                header("Authorization", "Bearer $student")
+            }.andExpect { status { isNotFound() } }
+        }
+
+        // An encoded slash never reaches the handler: the container rejects it
+        // outright, which is a stricter answer than ours and a welcome one.
+        mockMvc.get("/api/v1/items/$itemId/lesson/stream/..%2F..%2Fsecret.m3u8") {
+            header("Authorization", "Bearer $student")
+        }.andExpect { status { is4xxClientError() } }
+    }
+
+    @Test
+    fun `a stranger cannot fetch a rendition`() {
+        val teacher = instructorTokenFor("teacher")
+        val student = tokenFor("student")
+        val stranger = tokenFor("stranger")
+        val (itemId, mediaId) = videoLesson(teacher, student, "private-${System.nanoTime()}.mp4")
+        runJobFor(mediaId, itemId)
+
+        mockMvc.get("/api/v1/items/$itemId/lesson/stream/v0.m3u8") {
+            header("Authorization", "Bearer $stranger")
+        }.andExpect { status { isForbidden() } }
     }
 
     @Test
