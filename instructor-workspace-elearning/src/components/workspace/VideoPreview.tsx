@@ -22,12 +22,21 @@ import { MEDIA_FRAME } from "@/lib/media-frame";
  * have no video at all — would put it back.
  */
 
+/**
+ * What we last learned about the encode.
+ *
+ * `stalled` is not `running` with a longer wait. A queue with no worker on it
+ * looks exactly like an encode that has not got there yet, and the difference
+ * matters: one resolves itself and the other never will.
+ */
+type EncodeState = "none" | "running" | "stalled";
+
 /** How the encode looked the last time we asked. */
 type Source =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "hls"; manifestUrl: string }
-  | { kind: "original"; url: string; encoding: boolean }
+  | { kind: "original"; url: string; encode: EncodeState }
   | { kind: "error"; message: string };
 
 /**
@@ -36,6 +45,18 @@ type Source =
  * requests for one answer that was always going to take a while.
  */
 const POLL_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000];
+
+/**
+ * When to stop asking. These delays add up to roughly five minutes, which is
+ * long enough for any encode a worker has actually picked up.
+ *
+ * Giving up matters more than the exact number. Transcoding runs in a separate
+ * worker process that is not started by default, so "queued forever with
+ * nothing consuming it" is a normal state of a development machine — and a
+ * poll with no end polls a dead queue until the tab is closed while telling
+ * somebody their video is nearly ready.
+ */
+const MAX_POLLS = POLL_DELAYS_MS.length + 3;
 
 export function VideoPreview({
   itemId,
@@ -71,11 +92,11 @@ export function VideoPreview({
 
   /** The original upload, which plays whether or not anything has encoded it. */
   const playOriginal = useCallback(
-    async (encoding: boolean) => {
+    async (encode: EncodeState) => {
       try {
         const url = await curriculumApi.contentUrl(itemId);
         if (goneRef.current) return;
-        setSource({ kind: "original", url, encoding });
+        setSource({ kind: "original", url, encode });
       } catch (err) {
         if (goneRef.current) return;
         setSource({
@@ -100,7 +121,11 @@ export function VideoPreview({
       // Still encoding is a state to show, not a failure to report. Anything
       // else — no video, no permission — is a real error and says so.
       if (error.code === "STREAM_NOT_READY") {
-        void playOriginal(true);
+        if (attemptRef.current >= MAX_POLLS) {
+          void playOriginal("stalled");
+          return;
+        }
+        void playOriginal("running");
         const delay = POLL_DELAYS_MS[Math.min(attemptRef.current, POLL_DELAYS_MS.length - 1)];
         attemptRef.current += 1;
         pollRef.current = setTimeout(() => void load(), delay);
@@ -110,7 +135,7 @@ export function VideoPreview({
         setSource({ kind: "error", message: "This lesson has no video attached yet." });
         return;
       }
-      void playOriginal(false);
+      void playOriginal("none");
       return;
     }
 
@@ -144,7 +169,7 @@ export function VideoPreview({
         // iOS Safari has no Media Source Extensions and plays HLS natively
         // instead. It will not accept a manifest whose type it cannot sniff
         // from a blob, so the original upload is the honest answer there.
-        void playOriginal(false);
+        void playOriginal("none");
         return;
       }
 
@@ -160,7 +185,7 @@ export function VideoPreview({
         // fall back to it rather than showing the instructor a dead player.
         hls.destroy();
         hlsRef.current = null;
-        void playOriginal(false);
+        void playOriginal("none");
       });
     })();
 
@@ -250,12 +275,33 @@ export function VideoPreview({
         className={cn(MEDIA_FRAME, "block")}
         {...(source.kind === "original" ? { src: source.url } : {})}
       />
-      {source.kind === "original" && source.encoding && (
+      {source.kind === "original" && source.encode === "running" && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
           Still encoding. This is the file you uploaded; students get the streaming version once it
           finishes.
         </p>
+      )}
+      {source.kind === "original" && source.encode === "stalled" && (
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+          <p>
+            This is the file you uploaded, and it plays. The streaming version has not been built
+            after several minutes, which usually means no encoder is running to pick the job up.
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-1 h-6 px-1.5 align-baseline"
+              onClick={() => {
+                attemptRef.current = 0;
+                void load();
+              }}
+            >
+              Check again
+            </Button>
+          </p>
+        </div>
       )}
       {source.kind === "hls" && (
         <p className="text-xs text-muted-foreground">
