@@ -44,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -622,6 +623,9 @@ function LessonEditor({
   );
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState("");
+  // Null except while bytes are actually moving. A video is the one thing here
+  // big enough for "Uploading…" on its own to look like the page has hung.
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   // Bumped to re-seed the editor from `body` — it reads its text at mount and
@@ -821,7 +825,12 @@ function LessonEditor({
       let mediaId: string | undefined;
       if (file) {
         setStage("Uploading…");
-        const media = await mediaApi.upload(file, { onProgress: setStage });
+        const media = await mediaApi.upload(file, {
+          onProgress: ({ stage: phase, loaded, total }) => {
+            setStage(phase);
+            setUploadPercent(total > 0 ? Math.round((loaded / total) * 100) : null);
+          },
+        });
         mediaId = media.id ?? undefined;
       }
 
@@ -847,6 +856,7 @@ function LessonEditor({
 
       const result = await save.mutateAsync(payload);
       setStage("");
+      setUploadPercent(null);
       setFile(null);
       // Take the server's version of what was stored, so anything it trimmed or
       // defaulted does not leave the page looking unsaved.
@@ -861,6 +871,7 @@ function LessonEditor({
       toast.success("Lesson saved.");
     } catch (err) {
       setStage("");
+      setUploadPercent(null);
       setError(parseApiError(err).message || "Could not save that lesson.");
     }
   };
@@ -1196,9 +1207,15 @@ function LessonEditor({
         )}
 
         {stage && !error && (
-          <p className="rounded-lg border bg-secondary/40 p-2.5 text-xs text-muted-foreground">
-            {stage}
-          </p>
+          <div className="space-y-2 rounded-lg border bg-secondary/40 p-2.5">
+            <p className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>{stage}</span>
+              {uploadPercent !== null && <span className="tabular-nums">{uploadPercent}%</span>}
+            </p>
+            {/* Only while there are bytes to measure. A determinate bar sitting
+                at zero through a step that has no byte count reads as stuck. */}
+            {uploadPercent !== null && <Progress value={uploadPercent} className="h-1" />}
+          </div>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </form>

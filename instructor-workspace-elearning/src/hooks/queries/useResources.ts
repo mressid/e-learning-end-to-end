@@ -42,7 +42,10 @@ export function useAddResourceMutation(scope: ResourceScope, ownerId: string) {
       const body: CreateResourceRequest = { ...resource };
       if (file) {
         const media = await mediaApi.upload(file, {
-          ...(onProgress ? { onProgress } : {}),
+          // Attaching a document is a quick upload with nowhere to draw a bar,
+          // so the byte counts are collapsed back to the phase label this
+          // mutation has always handed its callers.
+          ...(onProgress ? { onProgress: (progress) => onProgress(progress.stage) } : {}),
         });
         body.mediaId = media.id ?? null;
       }

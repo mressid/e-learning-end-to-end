@@ -41,6 +41,14 @@ export type RequestUploadRequest = Schemas["RequestUploadRequest"];
 export type UploadTicketResponse = Schemas["UploadTicketResponse"];
 export type MediaObjectResponse = Schemas["MediaObjectResponse"];
 
+// Media — resumable multipart uploads
+export type BeginMultipartUploadRequest = Schemas["BeginMultipartUploadRequest"];
+export type MultipartUploadTicket = Schemas["MultipartUploadTicket"];
+export type UploadedPartResponse = Schemas["UploadedPartResponse"];
+export type UploadPartUrl = Schemas["UploadPartUrl"];
+export type PartRef = Schemas["PartRef"];
+export type CompleteMultipartUploadRequest = Schemas["CompleteMultipartUploadRequest"];
+
 /** What a resource is. `LINK` is "the link is the thing"; a PDF you link to is DOCUMENT + URL. */
 export type ResourceType = NonNullable<CreateResourceRequest["resourceType"]>;
 /** Where its content lives: an uploaded file, a URL, or text typed in place. */
