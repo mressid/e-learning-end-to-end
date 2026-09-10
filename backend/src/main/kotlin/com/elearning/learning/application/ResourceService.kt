@@ -112,6 +112,62 @@ class ResourceService(
         return resource
     }
 
+    /**
+     * Edits a resource in place.
+     *
+     * A resource was write-once until now, which was tenable while it was a
+     * whole lesson's body saved through [LessonService] and untenable the
+     * moment an item became an ordered list of them: a text block you can add
+     * and never correct is not a block anyone would use.
+     *
+     * `sourceType` is fixed, as it is everywhere else - the content lives in a
+     * different table for each, so changing it is a different resource rather
+     * than an edit of this one.
+     */
+    @Transactional
+    fun update(resourceId: UUID, command: UpdateResourceCommand, editorId: UUID): Resource {
+        val resource = requireResource(resourceId)
+        requireCanEdit(resource, editorId)
+
+        command.title?.let { resource.title = it }
+        if (command.describes) resource.description = command.description
+
+        when (resource.sourceType) {
+            SourceType.INLINE -> {
+                val body = command.content
+                if (body != null) {
+                    val existing = contents.findById(resourceId).orElse(null)
+                        ?: throw NotFoundException("RESOURCE_CONTENT_MISSING", "Resource content not found")
+                    if (body.isBlank()) {
+                        throw BusinessRuleException("CONTENT_REQUIRED", "An INLINE resource needs content")
+                    }
+                    existing.content = body
+                    command.contentType?.let { existing.contentType = it }
+                } else if (command.contentType != null) {
+                    contents.findById(resourceId).orElse(null)?.contentType = command.contentType
+                }
+            }
+            SourceType.URL -> {
+                val url = command.url?.trim()
+                if (url != null) {
+                    if (url.isBlank()) {
+                        throw BusinessRuleException("URL_REQUIRED", "A URL resource needs a url")
+                    }
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        throw BusinessRuleException("INVALID_URL", "Only http and https URLs are allowed")
+                    }
+                    urls.findById(resourceId).orElse(null)?.url = url
+                }
+            }
+            // The bytes of a file are not editable; replacing them is a new
+            // upload and a new resource. Only the labelling above applies.
+            SourceType.FILE -> Unit
+        }
+
+        resource.touch()
+        return resource
+    }
+
     @Transactional(readOnly = true)
     fun view(resourceId: UUID, viewerId: UUID): ResourceView {
         val resource = requireResource(resourceId)
@@ -174,6 +230,64 @@ class ResourceService(
     fun detachFromCourse(courseId: UUID, resourceId: UUID, editorId: UUID) {
         requireEditor(courseId, editorId)
         courseAttachments.deleteById(CourseResourceId(courseId, resourceId))
+    }
+
+    /**
+     * Detaching only. The resource itself survives, because it is a library
+     * material that other courses may be using and this is a statement about
+     * one item's contents rather than about the material.
+     */
+    @Transactional
+    fun detachFromItem(itemId: UUID, resourceId: UUID, editorId: UUID) {
+        requireEditor(courseOfItem(itemId), editorId)
+        itemAttachments.deleteById(ItemResourceId(itemId, resourceId))
+    }
+
+    @Transactional
+    fun detachFromSection(sectionId: UUID, resourceId: UUID, editorId: UUID) {
+        requireEditor(courseOfSection(sectionId), editorId)
+        sectionAttachments.deleteById(SectionResourceId(sectionId, resourceId))
+    }
+
+    /**
+     * Puts an item's blocks in the order given.
+     *
+     * The whole order is sent rather than one move, for the reason the
+     * curriculum's own reorder already documents: two authors dragging at once
+     * with relative moves converge on something neither of them chose, while a
+     * whole sequence is a statement of what the order *is*.
+     *
+     * Positions are rewritten from zero, so the stored numbers stay dense no
+     * matter how many times things have been added and removed.
+     */
+    @Transactional
+    fun reorderItemResources(itemId: UUID, orderedResourceIds: List<UUID>, editorId: UUID) {
+        requireEditor(courseOfItem(itemId), editorId)
+
+        val attached = itemAttachments.findByIdCourseItemIdOrderByPosition(itemId)
+        val known = attached.associateBy { it.id.resourceId }
+
+        // Naming something that is not attached is a stale client working from
+        // an order that has since changed. Renumbering the rest around it would
+        // silently drop whatever it thought it was moving.
+        val unknown = orderedResourceIds.filterNot(known::containsKey)
+        if (unknown.isNotEmpty()) {
+            throw BusinessRuleException(
+                "RESOURCE_NOT_ATTACHED",
+                "Some of those resources are not attached to this item",
+            )
+        }
+        if (orderedResourceIds.size != orderedResourceIds.distinct().size) {
+            throw BusinessRuleException("DUPLICATE_RESOURCE", "That order names a resource twice")
+        }
+
+        orderedResourceIds.forEachIndexed { index, resourceId ->
+            known.getValue(resourceId).position = index
+        }
+        // Anything the caller left out keeps its relative order behind the
+        // named ones rather than being renumbered into an arbitrary spot.
+        attached.filterNot { orderedResourceIds.contains(it.id.resourceId) }
+            .forEachIndexed { index, row -> row.position = orderedResourceIds.size + index }
     }
 
     @Transactional(readOnly = true)
@@ -243,6 +357,51 @@ class ResourceService(
         }
     }
 
+    /**
+     * Who may change a resource, as opposed to read it.
+     *
+     * Deliberately stricter than [requireCanRead], and not the same question.
+     * A resource is shared by design - the same cheat sheet hangs off two
+     * courses - so "can edit some course it is attached to" would let an editor
+     * of one course silently rewrite what another course's students are
+     * looking at. Nobody would see it happen.
+     *
+     * So editing requires being able to edit *every* course it reaches. A block
+     * used only in your own course is yours to change, which is the ordinary
+     * case and the one the block list depends on; a material somebody else has
+     * taken into their course stops being unilaterally editable, and changing
+     * it for yourself means making your own copy.
+     *
+     * The creator is not exempt. Handing a resource to another course and then
+     * editing it from underneath them is the same problem regardless of who
+     * first uploaded it.
+     */
+    private fun requireCanEdit(resource: Resource, editorId: UUID) {
+        val resourceId = requireNotNull(resource.id)
+
+        val courses = buildSet {
+            courseAttachments.findByIdResourceId(resourceId).forEach { add(it.id.courseId) }
+            sectionAttachments.findByIdResourceId(resourceId).forEach { add(courseOfSection(it.id.sectionId)) }
+            itemAttachments.findByIdResourceId(resourceId).forEach { add(courseOfItem(it.id.courseItemId)) }
+        }
+
+        // Attached to nothing yet: a block just created and not yet placed, or
+        // a library material nobody has used. Its creator still owns it.
+        if (courses.isEmpty()) {
+            if (resource.createdBy != editorId) {
+                throw ForbiddenException("RESOURCE_ACCESS_DENIED", "That resource is not yours to change")
+            }
+            return
+        }
+
+        if (!courses.all { catalog.canEdit(it, editorId) }) {
+            throw ForbiddenException(
+                "RESOURCE_SHARED",
+                "This material is used by a course you cannot edit. Copy it to change it here.",
+            )
+        }
+    }
+
     private fun isParticipant(courseId: UUID, userId: UUID): Boolean =
         catalog.canEdit(courseId, userId) || enrollmentService.hasActiveEnrollment(courseId, userId)
 
@@ -273,6 +432,25 @@ data class CreateResourceCommand(
     val sourceType: SourceType,
     val description: String? = null,
     val mediaId: UUID? = null,
+    val url: String? = null,
+    val content: String? = null,
+    val contentType: ResourceContentType? = null,
+)
+
+/**
+ * A partial edit: every field is optional and null means "leave it alone".
+ *
+ * That is the opposite of [SaveLessonCommand], where a missing field clears
+ * what was there. The difference is deliberate and follows the verb. A lesson
+ * is PUT, replacing the whole thing; a block is PATCHed, changing the part you
+ * named. Clearing a description therefore cannot be said by omission, which is
+ * what `describes` is for.
+ */
+data class UpdateResourceCommand(
+    val title: String? = null,
+    /** Whether `description` was sent at all, so that null can mean "clear it". */
+    val describes: Boolean = false,
+    val description: String? = null,
     val url: String? = null,
     val content: String? = null,
     val contentType: ResourceContentType? = null,

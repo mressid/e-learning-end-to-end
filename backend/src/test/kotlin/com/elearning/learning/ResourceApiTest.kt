@@ -12,7 +12,9 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.net.HttpURLConnection
@@ -367,6 +369,140 @@ class ResourceApiTest(
         mockMvc.get("/api/v1/resources/$resourceId") {
             header("Authorization", "Bearer ${course.teacher}")
         }.andExpect { status { isOk() } }
+    }
+
+    /**
+     * An item's blocks are its content now, so they have to be editable,
+     * removable and orderable. A text block you can add and never correct is
+     * not a block anyone would build a lesson out of.
+     */
+    @Test
+    fun `an item's blocks can be edited, reordered and removed`() {
+        val course = publishedCourse()
+        val first = inlineResource(course.teacher, "Intro")
+        val second = inlineResource(course.teacher, "Exercises")
+
+        listOf(first, second).forEach {
+            mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer ${course.teacher}")
+                content = """{"resourceId":"$it"}"""
+            }.andExpect { status { isCreated() } }
+        }
+
+        mockMvc.patch("/api/v1/resources/$first") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"title":"Introduction","content":"# Start here"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.title") { value("Introduction") }
+            jsonPath("$.content") { value("# Start here") }
+        }
+
+        mockMvc.put("/api/v1/items/${course.itemId}/resources/order") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"resourceIds":["$second","$first"]}"""
+        }.andExpect { status { isNoContent() } }
+
+        val ordered = mockMvc.get("/api/v1/items/${course.itemId}/resources") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        assertThat(array(objectMapper.readTree(ordered)).map { it.get("resource").get("id").asString() })
+            .containsExactly(second, first)
+
+        mockMvc.delete("/api/v1/items/${course.itemId}/resources/$second") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.get("/api/v1/items/${course.itemId}/resources") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect { jsonPath("$.length()") { value(1) } }
+    }
+
+    /**
+     * The reason editing is not simply "can you edit a course it is on".
+     *
+     * A resource is shared by design, so the permissive rule would let the
+     * editor of one course silently rewrite what another course's students are
+     * reading, with nobody on the other side seeing it happen.
+     */
+    @Test
+    fun `a resource shared into a course you cannot edit is not yours to change`() {
+        val mine = publishedCourse()
+        val theirs = publishedCourse()
+        val resourceId = inlineResource(mine.teacher, "Shared sheet")
+
+        listOf(mine to mine.teacher, theirs to theirs.teacher).forEach { (course, teacher) ->
+            mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer $teacher")
+                content = """{"resourceId":"$resourceId"}"""
+            }.andExpect { status { isCreated() } }
+        }
+
+        // Its own creator is refused too: having uploaded it first does not
+        // make rewriting it under somebody else's students acceptable.
+        mockMvc.patch("/api/v1/resources/$resourceId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${mine.teacher}")
+            content = """{"content":"rewritten"}"""
+        }.andExpect { status { isForbidden() } }
+
+        // Detaching from the other course leaves it reachable only from mine,
+        // and it becomes editable again.
+        mockMvc.delete("/api/v1/items/${theirs.itemId}/resources/$resourceId") {
+            header("Authorization", "Bearer ${theirs.teacher}")
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.patch("/api/v1/resources/$resourceId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${mine.teacher}")
+            content = """{"content":"rewritten"}"""
+        }.andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `reordering refuses an order naming something not attached`() {
+        val course = publishedCourse()
+        val attached = inlineResource(course.teacher, "Attached")
+        val loose = inlineResource(course.teacher, "Not attached")
+        mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"resourceId":"$attached"}"""
+        }.andExpect { status { isCreated() } }
+
+        // Renumbering around it would silently drop whatever the client
+        // thought it was moving.
+        mockMvc.put("/api/v1/items/${course.itemId}/resources/order") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"resourceIds":["$attached","$loose"]}"""
+        }.andExpect { status { isUnprocessableEntity() } }
+    }
+
+    @Test
+    fun `only course staff may reorder or remove a block`() {
+        val course = publishedCourse()
+        val resourceId = inlineResource(course.teacher)
+        mockMvc.post("/api/v1/items/${course.itemId}/resources") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer ${course.teacher}")
+            content = """{"resourceId":"$resourceId"}"""
+        }.andExpect { status { isCreated() } }
+
+        val student = enrolledStudent(course)
+        mockMvc.delete("/api/v1/items/${course.itemId}/resources/$resourceId") {
+            header("Authorization", "Bearer $student")
+        }.andExpect { status { isForbidden() } }
+
+        mockMvc.put("/api/v1/items/${course.itemId}/resources/order") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $student")
+            content = """{"resourceIds":["$resourceId"]}"""
+        }.andExpect { status { isForbidden() } }
     }
 
     @Test
