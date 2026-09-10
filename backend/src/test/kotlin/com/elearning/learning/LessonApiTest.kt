@@ -201,6 +201,64 @@ class LessonApiTest(
     }
 
     /**
+     * A lesson is rarely only one thing. "Watch this, then read the notes" was
+     * two course items before this, which split one lesson's progress across
+     * two rows of the curriculum for no reason a student would recognise.
+     */
+    @Test
+    fun `a file lesson carries writing beside its file`() {
+        val course = publishedCourseWithItem()
+        val mediaId = uploadFile(course.teacher, "the lecture")
+
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"VIDEO","sourceType":"FILE","mediaId":"$mediaId",
+                "content":"## What to watch for\n\nThe proof starts at 4:10.","contentFormat":"MARKDOWN"}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.hasFile") { value(true) }
+            jsonPath("$.contentFormat") { value("MARKDOWN") }
+        }
+
+        // Both halves survive the round trip, and the file is still a file.
+        mockMvc.get("/api/v1/items/${course.itemId}/lesson") {
+            header("Authorization", "Bearer ${course.teacher}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.sourceType") { value("FILE") }
+            jsonPath("$.hasFile") { value(true) }
+            jsonPath("$.content") { value("## What to watch for\n\nThe proof starts at 4:10.") }
+        }
+    }
+
+    /**
+     * Notes are optional, so leaving them out means removing them - the same
+     * rule as every other field here. The file is the one exception, and only
+     * because its media id is never handed back to re-send.
+     */
+    @Test
+    fun `dropping the notes from a file lesson clears them and keeps the file`() {
+        val course = publishedCourseWithItem()
+        val mediaId = uploadFile(course.teacher, "the lecture")
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"VIDEO","sourceType":"FILE","mediaId":"$mediaId","content":"notes"}""",
+        ).andExpect { status { isOk() } }
+
+        saveLesson(
+            course.teacher,
+            course.itemId,
+            """{"title":"L","resourceType":"VIDEO","sourceType":"FILE"}""",
+        ).andExpect {
+            status { isOk() }
+            jsonPath("$.content") { doesNotExist() }
+            jsonPath("$.hasFile") { value(true) }
+        }
+    }
+
+    /**
      * Audio and links used to be refused: the lesson had a name for them and no
      * table to put them in. A lesson's body is a resource now, and the resource
      * model always knew how to hold both.

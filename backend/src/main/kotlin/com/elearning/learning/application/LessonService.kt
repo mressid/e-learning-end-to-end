@@ -118,6 +118,20 @@ class LessonService(
             SourceType.URL -> writeUrl(resourceId, command)
             SourceType.INLINE -> writeInline(resourceId, command)
         }
+
+        // A lesson is rarely only one thing. "Watch this, then read the notes,
+        // then download the slides" is what a lesson actually looks like, and
+        // making an author create three items to say it fragments one lesson's
+        // progress across three rows of the curriculum.
+        //
+        // The three content tables are each keyed on the resource alone, so a
+        // resource holding a video can hold writing beside it without a table
+        // or a column being invented. `sourceType` still says what the lesson
+        // *is* - it decides what a student is being asked to do - and this is
+        // what accompanies it.
+        if (command.sourceType != SourceType.INLINE) {
+            writeNotes(resourceId, command)
+        }
         return resource
     }
 
@@ -200,6 +214,35 @@ class LessonService(
         }
     }
 
+    /**
+     * The writing that accompanies a file or a link, rather than being the
+     * lesson itself.
+     *
+     * Optional, unlike [writeInline] - a video with no notes under it is a
+     * perfectly ordinary lesson. Sending nothing clears what was there, which
+     * is how every other field on this endpoint already behaves; the file is
+     * the sole exception, and only because its media id is never handed back
+     * for the client to re-send. Notes are returned in full, so an author who
+     * leaves them out is saying to remove them.
+     */
+    private fun writeNotes(resourceId: UUID, command: SaveLessonCommand) {
+        val body = command.content?.takeIf { it.isNotBlank() }
+        val existing = contents.findById(resourceId).orElse(null)
+
+        if (body == null) {
+            if (existing != null) contents.delete(existing)
+            return
+        }
+
+        val format = command.contentFormat ?: ResourceContentType.MARKDOWN
+        if (existing == null) {
+            contents.save(ResourceContent(resourceId = resourceId, contentType = format, content = body))
+        } else {
+            existing.content = body
+            existing.contentType = format
+        }
+    }
+
     @Transactional(readOnly = true)
     fun get(itemId: UUID, viewerId: UUID): LessonView {
         requireReadableLesson(itemId, viewerId)
@@ -273,11 +316,10 @@ class LessonService(
 
     private fun view(lesson: Lesson, material: Resource): LessonView {
         val resourceId = lesson.primaryResourceId
-        val inline = if (material.sourceType == SourceType.INLINE) {
-            contents.findById(resourceId).orElse(null)
-        } else {
-            null
-        }
+        // Read whatever the sourceType, because writing is no longer only ever
+        // the lesson itself: for an INLINE lesson this is the body, and for a
+        // file or a link it is the notes that go with it.
+        val written = contents.findById(resourceId).orElse(null)
         return LessonView(
             courseItemId = lesson.courseItemId,
             title = material.title,
@@ -286,8 +328,8 @@ class LessonService(
             description = lesson.description,
             durationSeconds = lesson.durationSeconds,
             completionRule = lesson.completionRule,
-            content = inline?.content,
-            contentFormat = inline?.contentType,
+            content = written?.content,
+            contentFormat = written?.contentType,
             url = if (material.sourceType == SourceType.URL) {
                 urls.findById(resourceId).orElse(null)?.url
             } else {

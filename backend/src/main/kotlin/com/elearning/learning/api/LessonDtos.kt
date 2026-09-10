@@ -19,6 +19,11 @@ import java.util.UUID
         and decides which content field is required: FILE needs `mediaId` -
         except when replacing nothing, where the file already attached is kept -
         URL needs `url`, INLINE needs `content`.
+
+        `content` is also accepted alongside a file or a link, where it is the
+        writing that goes with the material rather than the material itself -
+        the notes under a video. Optional there, and omitting it removes what
+        was there before.
     """,
 )
 data class SaveLessonRequest(
@@ -41,7 +46,7 @@ data class SaveLessonRequest(
 
     val completionRule: CompletionRule? = null,
 
-    @get:Schema(description = "The body, for an INLINE lesson")
+    @get:Schema(description = "The body of an INLINE lesson, or the notes beside a file or link")
     val content: String? = null,
 
     @get:Schema(description = "How to read `content`; defaults to MARKDOWN")
@@ -63,7 +68,10 @@ data class LessonResponse(
     val description: String?,
     val durationSeconds: Int?,
     val completionRule: String,
-    @get:Schema(description = "Body of an INLINE lesson")
+    @get:Schema(
+        description = "The lesson's writing: the body of an INLINE lesson, or the notes " +
+            "accompanying a file or a link. Rendered after the video and before the attachments.",
+    )
     val content: String?,
     val contentFormat: String?,
     @get:Schema(description = "Target of a URL lesson")
