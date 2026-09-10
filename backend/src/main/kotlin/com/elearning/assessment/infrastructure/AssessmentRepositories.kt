@@ -25,12 +25,17 @@ interface QuestionOptionRepository : JpaRepository<QuestionOption, UUID> {
     fun findByQuestionIdOrderByPosition(questionId: UUID): List<QuestionOption>
 
     fun findByQuestionIdIn(questionIds: Collection<UUID>): List<QuestionOption>
+
+    fun deleteByQuestionId(questionId: UUID)
 }
 
 interface QuizAttemptRepository : JpaRepository<QuizAttempt, UUID> {
 
     /** Whether any of these items has been attempted, for the delete guard. */
     fun existsByQuizIdIn(quizIds: Collection<UUID>): Boolean
+
+    /** The same question for one quiz, which is what freezes its answer key. */
+    fun existsByQuizId(quizId: UUID): Boolean
 
     fun countByQuizIdAndStudentId(quizId: UUID, studentId: UUID): Int
 

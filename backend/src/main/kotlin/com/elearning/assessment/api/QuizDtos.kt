@@ -4,8 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.elearning.assessment.application.AttemptResult
 import com.elearning.assessment.application.AttemptView
 import com.elearning.assessment.application.QuestionWithOptions
+import com.elearning.assessment.application.QuizWithActivity
 import com.elearning.assessment.domain.QuestionType
-import com.elearning.assessment.domain.Quiz
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.Valid
 import jakarta.validation.constraints.DecimalMin
@@ -37,16 +37,24 @@ data class QuizResponseDto(
     val maxAttempts: Int?,
     val timeLimitSeconds: Int?,
     val randomizeQuestions: Boolean,
+    @get:JsonProperty("hasAttempts")
+    @get:Schema(
+        description = "Whether a student has sat this quiz. Once true the paper is frozen: no " +
+            "question can be added or deleted, and a question's type and options can no " +
+            "longer be changed. Wording, points and the quiz's own settings stay editable.",
+    )
+    val hasAttempts: Boolean,
 ) {
     companion object {
-        fun of(q: Quiz) = QuizResponseDto(
-            courseItemId = q.courseItemId,
-            title = q.title,
-            instructions = q.instructions,
-            passingScore = q.passingScore,
-            maxAttempts = q.maxAttempts,
-            timeLimitSeconds = q.timeLimitSeconds,
-            randomizeQuestions = q.randomizeQuestions,
+        fun of(v: QuizWithActivity) = QuizResponseDto(
+            courseItemId = v.quiz.courseItemId,
+            title = v.quiz.title,
+            instructions = v.quiz.instructions,
+            passingScore = v.quiz.passingScore,
+            maxAttempts = v.quiz.maxAttempts,
+            timeLimitSeconds = v.quiz.timeLimitSeconds,
+            randomizeQuestions = v.quiz.randomizeQuestions,
+            hasAttempts = v.hasAttempts,
         )
     }
 }
@@ -58,6 +66,19 @@ data class AddQuestionRequest(
     @field:DecimalMin("0.0") val points: BigDecimal? = null,
     @get:Schema(description = "Required for choice questions, forbidden otherwise")
     @field:Valid val options: List<OptionRequest> = emptyList(),
+)
+
+@Schema(
+    name = "UpdateQuestionRequest",
+    description = "Only the fields you send change. Wording and points are always editable; " +
+        "the type and the options are refused once a student has sat the quiz.",
+)
+data class UpdateQuestionRequest(
+    val type: QuestionType? = null,
+    @field:Size(min = 1) val text: String? = null,
+    @field:DecimalMin("0.0") val points: BigDecimal? = null,
+    @get:Schema(description = "Replaces every option; omit to leave them alone, send an empty list to clear them")
+    @field:Valid val options: List<OptionRequest>? = null,
 )
 
 @Schema(name = "QuestionOptionRequest")
