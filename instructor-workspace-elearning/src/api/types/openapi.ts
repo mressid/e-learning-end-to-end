@@ -634,7 +634,7 @@ export interface paths {
          * One learner
          * @description Requires `user.read`.
          */
-        get: operations["get_5"];
+        get: operations["get_6"];
         put?: never;
         post?: never;
         delete?: never;
@@ -644,7 +644,7 @@ export interface paths {
          * Edit an account
          * @description Requires `user.write`. Only the fields you send change. Which kind of account this is cannot be edited here, or anywhere: a learner who starts teaching is given an instructor account rather than converted into one.
          */
-        patch: operations["update_4"];
+        patch: operations["update_5"];
         trace?: never;
     };
     "/api/v1/admin/users/{userId}/password": {
@@ -1266,14 +1266,14 @@ export interface paths {
          * Get a course
          * @description Published courses are public. Drafts are visible only to the owner and its instructors.
          */
-        get: operations["get_4"];
+        get: operations["get_5"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Update a course */
-        patch: operations["update_3"];
+        patch: operations["update_4"];
         trace?: never;
     };
     "/api/v1/courses/{id}/archive": {
@@ -1462,7 +1462,7 @@ export interface paths {
          * One course item
          * @description Visible to anyone who can see the course. An item is addressable on its own - its lesson, quiz and assignment all hang off this id - so a page opened at one of those URLs can load the item it names.
          */
-        get: operations["get_3"];
+        get: operations["get_4"];
         put?: never;
         post?: never;
         /**
@@ -1476,7 +1476,7 @@ export interface paths {
          * Rename an item, or change whether it is required
          * @description Only the fields you send change. The type is fixed at creation: a lesson and a quiz store different things, and switching would orphan them.
          */
-        patch: operations["update_2"];
+        patch: operations["update_3"];
         trace?: never;
     };
     "/api/v1/items/{itemId}/assignment": {
@@ -1547,7 +1547,7 @@ export interface paths {
         };
         /**
          * Read a lesson
-         * @description Course editors, or students with an active enrolment.
+         * @description Course editors, or students with an active enrolment. `title`, `resourceType` and `sourceType` are null for a lesson made of blocks; read /items/{itemId}/resources for what it actually contains.
          */
         get: operations["get"];
         /**
@@ -1559,7 +1559,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Describe a lesson without touching its content
+         * @description The counterpart to PUT for a lesson made of blocks. PUT replaces the whole lesson including its material, which is right when the material is what you are editing and wrong when the content is the item's ordered resources: changing a duration should not mean re-sending a video. Creates the lesson if the item has none, so an item can be given blocks and a description without ever naming a primary material.
+         */
+        patch: operations["updateDetails"];
         trace?: never;
     };
     "/api/v1/items/{itemId}/lesson/content-url": {
@@ -1728,12 +1732,55 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** An item's resources, in order */
+        /**
+         * An item's resources, in order
+         * @description This is the item's content, read top to bottom: the blocks a lesson is made of rather than a list of extras beside it.
+         */
         get: operations["itemResources"];
         put?: never;
         /** Attach a resource to a course item */
         post: operations["attachToItem"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{itemId}/resources/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the order of an item's blocks
+         * @description The whole sequence is sent rather than one move: two authors dragging at once with relative moves converge on an order neither chose.
+         */
+        put: operations["reorderItemResources"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{itemId}/resources/{resourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take a resource off an item
+         * @description Removes the block from this item. The material itself survives, because it is a library material other courses may be using.
+         */
+        delete: operations["detachFromItem"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1852,14 +1899,14 @@ export interface paths {
             cookie?: never;
         };
         /** Read your profile */
-        get: operations["get_2"];
+        get: operations["get_3"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Update your profile */
-        patch: operations["update_1"];
+        patch: operations["update_2"];
         trace?: never;
     };
     "/api/v1/media/uploads": {
@@ -2068,13 +2115,17 @@ export interface paths {
          * Read a resource
          * @description Its creator, or a participant of a course it is attached to.
          */
-        get: operations["get_6"];
+        get: operations["get_2"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit a resource
+         * @description Allowed only to someone who can edit every course the resource is attached to. A material shared into a course you cannot edit is not yours to change from here, because nobody on the other side would see it happen.
+         */
+        patch: operations["update_1"];
         trace?: never;
     };
     "/api/v1/resources/{resourceId}/download-url": {
@@ -2209,6 +2260,26 @@ export interface paths {
         /** Attach a resource to a section */
         post: operations["attachToSection"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sections/{sectionId}/resources/{resourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take a resource off a section
+         * @description The material itself survives; other courses may be using it.
+         */
+        delete: operations["detachFromSection"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2840,7 +2911,7 @@ export interface components {
         };
         LessonResponse: {
             completionRule?: string;
-            /** @description Body of an INLINE lesson */
+            /** @description The lesson's writing: the body of an INLINE lesson, or the notes accompanying a file or a link. Rendered after the video and before the attachments. */
             content?: string | null;
             contentFormat?: string | null;
             /** Format: uuid */
@@ -2850,9 +2921,10 @@ export interface components {
             durationSeconds?: number | null;
             /** @description Whether a file is attached; fetch it from /content-url */
             hasFile?: boolean;
-            resourceType?: string;
-            sourceType?: string;
-            title?: string;
+            resourceType?: string | null;
+            sourceType?: string | null;
+            /** @description The primary material's title, kind and where it lives. All null for a lesson assembled from blocks: there is no single answer once it is a video, some notes and two downloads. Read /items/{id}/resources for those. */
+            title?: string | null;
             /** @description Target of a URL lesson */
             url?: string | null;
         };
@@ -3246,6 +3318,10 @@ export interface components {
         RenameCategoryRequest: {
             name: string;
         };
+        /** @description The blocks of an item, in the order they should be read. Anything attached but not named keeps its relative order behind them. */
+        ReorderItemResourcesRequest: {
+            resourceIds?: string[];
+        };
         /** @description Must list every child exactly once */
         ReorderRequest: {
             orderedIds?: string[];
@@ -3345,11 +3421,16 @@ export interface components {
          *             and decides which content field is required: FILE needs `mediaId` -
          *             except when replacing nothing, where the file already attached is kept -
          *             URL needs `url`, INLINE needs `content`.
+         *
+         *             `content` is also accepted alongside a file or a link, where it is the
+         *             writing that goes with the material rather than the material itself -
+         *             the notes under a video. Optional there, and omitting it removes what
+         *             was there before.
          */
         SaveLessonRequest: {
             /** @enum {string|null} */
             completionRule?: "MANUAL" | "VIEW" | "DURATION" | null;
-            /** @description The body, for an INLINE lesson */
+            /** @description The body of an INLINE lesson, or the notes beside a file or link */
             content?: string | null;
             /**
              * @description How to read `content`; defaults to MARKDOWN
@@ -3574,6 +3655,21 @@ export interface components {
             shortDescription?: string | null;
             title?: string | null;
         };
+        /**
+         * @description What belongs to the lesson rather than to any of its blocks. A field
+         *             left out is left alone, so describing a lesson does not mean re-sending
+         *             a video the way PUT does. The content itself is the item's resources.
+         */
+        UpdateLessonDetailsRequest: {
+            /** @enum {string|null} */
+            completionRule?: "MANUAL" | "VIEW" | "DURATION" | null;
+            description?: string | null;
+            /**
+             * Format: int32
+             * @description How long the author says it takes. For a video, its runtime.
+             */
+            durationSeconds?: number | null;
+        };
         /** @description Only the fields present are changed */
         UpdateProfileRequest: {
             /**
@@ -3586,6 +3682,21 @@ export interface components {
             language?: string | null;
             lastName?: string | null;
             timezone?: string | null;
+        };
+        /**
+         * @description A partial edit: a field left out is left alone, unlike the lesson
+         *             endpoint where a missing field is a cleared one. `sourceType` cannot
+         *             change - the content of each lives in a different table, so that is a
+         *             different resource rather than an edit of this one - and neither can
+         *             the bytes of a file, which is a fresh upload.
+         */
+        UpdateResourceRequest: {
+            content?: string | null;
+            /** @enum {string|null} */
+            contentType?: "MARKDOWN" | "HTML" | "PLAIN_TEXT" | null;
+            description?: string | null;
+            title?: string | null;
+            url?: string | null;
         };
         /** @description Every field optional; only what is sent changes. Position is not editable here - moving a section is the reorder endpoint, which sees the whole sequence. */
         UpdateSectionRequest: {
@@ -4502,7 +4613,7 @@ export interface operations {
             };
         };
     };
-    get_5: {
+    get_6: {
         parameters: {
             query?: never;
             header?: never;
@@ -4524,7 +4635,7 @@ export interface operations {
             };
         };
     };
-    update_4: {
+    update_5: {
         parameters: {
             query?: never;
             header?: never;
@@ -5491,7 +5602,7 @@ export interface operations {
             };
         };
     };
-    get_4: {
+    get_5: {
         parameters: {
             query?: never;
             header?: never;
@@ -5522,7 +5633,7 @@ export interface operations {
             };
         };
     };
-    update_3: {
+    update_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -5815,7 +5926,7 @@ export interface operations {
             };
         };
     };
-    get_3: {
+    get_4: {
         parameters: {
             query?: never;
             header?: never;
@@ -5866,7 +5977,7 @@ export interface operations {
             };
         };
     };
-    update_2: {
+    update_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -6084,6 +6195,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLessonDetailsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonResponse"];
                 };
             };
         };
@@ -6410,6 +6547,60 @@ export interface operations {
             };
         };
     };
+    reorderItemResources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderItemResourcesRequest"];
+            };
+        };
+        responses: {
+            /** @description Reordered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Names a resource that is not attached, or names one twice */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    detachFromItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     me: {
         parameters: {
             query?: never;
@@ -6538,7 +6729,7 @@ export interface operations {
             };
         };
     };
-    get_2: {
+    get_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -6558,7 +6749,7 @@ export interface operations {
             };
         };
     };
-    update_1: {
+    update_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -6847,7 +7038,7 @@ export interface operations {
             };
         };
     };
-    get_6: {
+    get_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -6865,6 +7056,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+        };
+    };
+    update_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+            /** @description Not yours, or shared with a course you cannot edit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7102,6 +7328,27 @@ export interface operations {
         responses: {
             /** @description OK */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    detachFromSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sectionId: string;
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };

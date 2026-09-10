@@ -7,6 +7,7 @@ import type {
   SaveLessonRequest,
   SectionResponse,
   UpdateCourseItemRequest,
+  UpdateLessonDetailsRequest,
   UpdateSectionRequest,
 } from "../types";
 
@@ -168,6 +169,27 @@ export const curriculumApi = {
     if (error || typeof data !== "string" || !data.trim()) {
       throw parseApiError(error ?? { message: "This lesson has no playable video." });
     }
+    return data;
+  },
+
+  /**
+   * Changes what belongs to the lesson rather than to any of its blocks.
+   *
+   * The counterpart to `saveLesson`, and the one this editor uses now that a
+   * lesson's content is its ordered blocks. A PUT replaces the whole lesson
+   * including its material, which would mean re-sending a video to correct a
+   * duration; this leaves the content alone. It also creates the lesson if the
+   * item has none, so blocks can be added to an item nobody has described yet.
+   */
+  async updateLessonDetails(
+    itemId: string,
+    body: UpdateLessonDetailsRequest,
+  ): Promise<LessonResponse> {
+    const { data, error } = await apiClient.PATCH("/api/v1/items/{itemId}/lesson", {
+      params: { path: { itemId } },
+      body,
+    });
+    if (error || !data) throw parseApiError(error);
     return data;
   },
 

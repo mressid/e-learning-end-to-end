@@ -29,11 +29,13 @@ export type ReorderRequest = Schemas["ReorderRequest"];
 // Lessons
 export type LessonResponse = Schemas["LessonResponse"];
 export type SaveLessonRequest = Schemas["SaveLessonRequest"];
+export type UpdateLessonDetailsRequest = Schemas["UpdateLessonDetailsRequest"];
 
 // Resources — documents, links and inline notes
 export type ResourceResponse = Schemas["ResourceResponse"];
 export type CreateResourceRequest = Schemas["CreateResourceRequest"];
 export type AttachResourceRequest = Schemas["AttachResourceRequest"];
+export type UpdateResourceRequest = Schemas["UpdateResourceRequest"];
 export type AttachedResourceResponse = Schemas["AttachedResourceResponse"];
 
 // Media
