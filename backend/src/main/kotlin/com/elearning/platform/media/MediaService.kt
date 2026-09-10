@@ -107,6 +107,37 @@ class MediaService(
      * `createdBy` stays null: there is no uploader, so the uploader-only access
      * path does not apply and callers must authorize readers themselves.
      */
+    /**
+     * Stores a generated file at exactly the key given, rather than under a
+     * fresh one derived from its name.
+     *
+     * [storeGenerated] deliberately invents a key: a certificate or a thumbnail
+     * is reached only through its media row, and a scattered layout is fine.
+     * An HLS rendition is the exception, and it is not a preference. A manifest
+     * names its segments by relative name, so a player resolves them against
+     * wherever the manifest itself was served from - which means the two have
+     * to be siblings in storage, and a key derived from a filename is not.
+     *
+     * Going through [storeGenerated] here is what put the manifest under
+     * `uploads/…/hls-<job>-index.m3u8` while its segments sat under
+     * `hls/<job>/`, so every URL the playback service signed pointed at
+     * nothing. Presigning does not check that a key exists, so it failed
+     * silently and only at playback.
+     */
+    @Transactional
+    fun storeGeneratedAt(objectKey: String, contentType: String, bytes: ByteArray): MediaObject {
+        storage.put(properties.mediaBucket, objectKey, bytes, contentType)
+        return media.save(
+            MediaObject(
+                bucket = properties.mediaBucket,
+                objectKey = objectKey,
+                mimeType = contentType,
+                originalFilename = objectKey.substringAfterLast('/'),
+                createdBy = null,
+            ).apply { markAvailable(bytes.size.toLong()) },
+        )
+    }
+
     @Transactional
     fun storeGenerated(filename: String, contentType: String, bytes: ByteArray): MediaObject {
         val key = objectKeyFor(filename)

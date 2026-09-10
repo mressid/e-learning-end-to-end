@@ -140,4 +140,19 @@ class LessonController(
         lessonService.get(itemId, currentUser.requireId())
         return playbackService.manifestFor(itemId)
     }
+
+    @GetMapping("/stream/{name}", produces = ["application/vnd.apple.mpegurl"])
+    @Operation(
+        summary = "One rendition's playlist, with its segments signed",
+        description = "The master playlist names its renditions and each rendition names its " +
+            "own segments, so signing only the master was one hop short: a player followed a " +
+            "signed link to a rendition, read a relative segment name out of it, and asked " +
+            "storage for that name unsigned. Renditions therefore come back through here. " +
+            "Same access rule as the lesson, and `name` is checked against what the master " +
+            "actually references rather than trusted from the URL.",
+    )
+    fun streamVariant(@PathVariable itemId: UUID, @PathVariable name: String): String {
+        lessonService.get(itemId, currentUser.requireId())
+        return playbackService.variantFor(itemId, name)
+    }
 }
