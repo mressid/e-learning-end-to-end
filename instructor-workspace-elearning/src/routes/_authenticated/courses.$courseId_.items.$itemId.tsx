@@ -119,6 +119,29 @@ const FORMAT_LABEL: Record<string, string> = {
   PLAIN_TEXT: "Plain text",
 };
 
+/**
+ * Where a given kind of material can actually live.
+ *
+ * The two questions are genuinely separate — a video can be a file you upload
+ * or a link to one somewhere else — but they are not independent, and
+ * pretending they were is what made choosing "Video" leave the form still set
+ * to a written lesson with a text box under it. A video is not text. Offering
+ * "written here" for one is offering a combination the server will refuse.
+ *
+ * The first entry is the default the form falls back to, so it is the common
+ * case: uploading the file for anything with bytes, and a link for a LINK,
+ * where the link *is* the material rather than a way of reaching it.
+ */
+function sourcesFor(resourceType: ResourceType): SourceType[] {
+  if (resourceType === "LINK") return ["URL"];
+  if (resourceType === "VIDEO" || resourceType === "AUDIO" || resourceType === "IMAGE") {
+    return ["FILE", "URL"];
+  }
+  // A document, some source code or an unclassified thing can all reasonably
+  // be typed in place, which is what the markdown body below is for.
+  return SOURCE_TYPES;
+}
+
 /** Narrows the file picker where the kind makes it obvious. */
 function acceptFor(resourceType: ResourceType): string | undefined {
   if (resourceType === "VIDEO") return "video/*";
@@ -965,7 +988,18 @@ function LessonEditor({
               <Label>What it is</Label>
               <Select
                 value={resourceType}
-                onValueChange={(value) => setResourceType(value as ResourceType)}
+                onValueChange={(value) => {
+                  const next = value as ResourceType;
+                  setResourceType(next);
+                  // Moving to a kind that cannot live where this one does
+                  // carries the form with it, rather than leaving someone on a
+                  // combination that has no valid save behind it.
+                  const allowed = sourcesFor(next);
+                  if (!allowed.includes(sourceType)) {
+                    setSourceType(allowed[0]!);
+                    setFile(null);
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -996,7 +1030,7 @@ function LessonEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SOURCE_TYPES.map((type) => (
+                  {sourcesFor(resourceType).map((type) => (
                     <SelectItem key={type} value={type}>
                       {WHERE[type]?.label}
                     </SelectItem>
