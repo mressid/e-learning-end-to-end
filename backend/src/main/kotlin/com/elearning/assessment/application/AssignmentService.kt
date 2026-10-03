@@ -8,9 +8,9 @@ import com.elearning.assessment.infrastructure.AssignmentRepository
 import com.elearning.assessment.infrastructure.AssignmentSubmissionRepository
 import com.elearning.assessment.infrastructure.SubmissionMediaRepository
 import com.elearning.platform.media.MediaService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.events.AssignmentGraded
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Page
@@ -36,8 +36,8 @@ class AssignmentService(
     @Transactional
     fun upsert(itemId: UUID, command: SaveAssignmentCommand, editorId: UUID): Assignment {
         requireEditor(itemId, editorId)
-        if (command.maxScore <= BigDecimal.ZERO) {
-            throw BusinessRuleException("INVALID_MAX_SCORE", "Maximum score must be greater than zero")
+        requireRule(command.maxScore > BigDecimal.ZERO, "INVALID_MAX_SCORE") {
+            "Maximum score must be greater than zero"
         }
 
         val existing = assignments.findById(itemId).orElse(null)
@@ -76,11 +76,11 @@ class AssignmentService(
         context.requireActiveEnrollment(courseId, studentId)
         val assignment = requireAssignment(itemId)
 
-        if (!assignment.acceptsSubmissionAt()) {
-            throw BusinessRuleException("SUBMISSION_LATE", "The due date has passed and late work is not accepted")
+        requireRule(assignment.acceptsSubmissionAt(), "SUBMISSION_LATE") {
+            "The due date has passed and late work is not accepted"
         }
-        if (command.content.isNullOrBlank() && command.mediaIds.isEmpty()) {
-            throw BusinessRuleException("EMPTY_SUBMISSION", "A submission needs text or at least one file")
+        requireRule(!command.content.isNullOrBlank() || command.mediaIds.isNotEmpty(), "EMPTY_SUBMISSION") {
+            "A submission needs text or at least one file"
         }
 
         val previous = submissions.countByAssignmentIdAndStudentId(itemId, studentId)
@@ -97,8 +97,8 @@ class AssignmentService(
             val media = mediaService.requireAvailable(mediaId)
             // A student may only attach their own uploads: otherwise a guessed
             // media id would let them submit someone else's work.
-            if (media.createdBy != studentId) {
-                throw ForbiddenException("MEDIA_ACCESS_DENIED", "That file is not yours to submit")
+            requireAllowed(media.createdBy == studentId, "MEDIA_ACCESS_DENIED") {
+                "That file is not yours to submit"
             }
             submissionMedia.save(SubmissionMediaId(requireNotNull(submission.id), mediaId).let(::SubmissionMedia))
         }
@@ -123,13 +123,15 @@ class AssignmentService(
 
     @Transactional
     fun grade(submissionId: UUID, command: GradeSubmissionCommand, editorId: UUID): AssignmentSubmission {
-        val submission = submissions.findById(submissionId)
-            .orElseThrow { NotFoundException("SUBMISSION_NOT_FOUND", "Submission not found") }
+        val submission = requireFound(
+            submissions.findById(submissionId).orElse(null),
+            "SUBMISSION_NOT_FOUND",
+        ) { "Submission not found" }
         requireEditor(submission.assignmentId, editorId)
 
         val assignment = requireAssignment(submission.assignmentId)
-        if (command.score < BigDecimal.ZERO || command.score > assignment.maxScore) {
-            throw BusinessRuleException("INVALID_SCORE", "Score must be between 0 and ${assignment.maxScore}")
+        requireRule(command.score >= BigDecimal.ZERO && command.score <= assignment.maxScore, "INVALID_SCORE") {
+            "Score must be between 0 and ${assignment.maxScore}"
         }
 
         submission.grade(command.score, command.feedback, editorId)
@@ -146,22 +148,25 @@ class AssignmentService(
     fun mediaIdsOf(submissionId: UUID): List<UUID> =
         submissionMedia.findByIdSubmissionId(submissionId).map { it.id.mediaId }
 
-    private fun requireAssignment(itemId: UUID): Assignment = assignments.findById(itemId)
-        .orElseThrow { NotFoundException("ASSIGNMENT_NOT_FOUND", "Assignment not found") }
+    private fun requireAssignment(itemId: UUID): Assignment = requireFound(
+        assignments.findById(itemId).orElse(null),
+        "ASSIGNMENT_NOT_FOUND",
+    ) { "Assignment not found" }
 
     private fun requireAssignmentItem(itemId: UUID): UUID {
-        val courseId = context.courseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        if (context.itemType(itemId) != "ASSIGNMENT") {
-            throw BusinessRuleException("NOT_AN_ASSIGNMENT_ITEM", "This course item is not an assignment")
+        val courseId = requireFound(context.courseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
+        requireRule(context.itemType(itemId) == "ASSIGNMENT", "NOT_AN_ASSIGNMENT_ITEM") {
+            "This course item is not an assignment"
         }
         return courseId
     }
 
     private fun requireEditor(itemId: UUID, editorId: UUID) {
         val courseId = requireAssignmentItem(itemId)
-        if (!context.canEditCourse(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(context.canEditCourse(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
     }
 }

@@ -3,7 +3,8 @@ package com.elearning.courses.application
 import com.elearning.courses.domain.Course
 import com.elearning.courses.domain.CourseInstructorId
 import com.elearning.courses.infrastructure.CourseInstructorRepository
-import com.elearning.shared.errors.ForbiddenException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
 import com.elearning.shared.security.PlatformAccess
 import org.springframework.stereotype.Component
 import java.util.UUID
@@ -35,8 +36,8 @@ class CourseAuthorization(
     }
 
     fun requireCanEdit(course: Course, userId: UUID) {
-        if (!canEdit(course, userId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(canEdit(course, userId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
     }
 
@@ -50,8 +51,9 @@ class CourseAuthorization(
      * keeps those separable instead of collapsing into one super-permission.
      */
     fun requireCanEdit(course: Course, userId: UUID, orPermission: String) {
-        if (canEdit(course, userId) || platformAccess.has(orPermission)) return
-        throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(canEdit(course, userId) || platformAccess.has(orPermission), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
+        }
     }
 
     /**
@@ -63,10 +65,10 @@ class CourseAuthorization(
         // `course.read` is the dashboard's view of the catalogue: seeing a draft
         // without being able to touch it, which no relationship can express.
         if (platformAccess.has("course.read")) return
-        if (userId == null || !canEdit(course, userId)) {
-            // Same error a missing course produces: whether an unpublished
-            // course exists is itself not public information.
-            throw com.elearning.shared.errors.NotFoundException("COURSE_NOT_FOUND", "Course not found")
+        // Same error a missing course produces: whether an unpublished
+        // course exists is itself not public information.
+        requireFound(userId != null && canEdit(course, userId), "COURSE_NOT_FOUND") {
+            "Course not found"
         }
     }
 }

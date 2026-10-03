@@ -20,9 +20,9 @@ import com.elearning.learning.infrastructure.ResourceRepository
 import com.elearning.learning.infrastructure.ResourceUrlRepository
 import com.elearning.platform.media.MediaService
 import com.elearning.platform.transcode.application.TranscodeService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
@@ -58,8 +58,8 @@ class LessonService(
     @Transactional
     fun upsert(itemId: UUID, command: SaveLessonCommand, editorId: UUID): LessonView {
         val courseId = requireCourseOfLessonItem(itemId)
-        if (!catalog.canEdit(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(catalog.canEdit(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
 
         val existing = lessons.findById(itemId).orElse(null)
@@ -126,8 +126,8 @@ class LessonService(
     @Transactional
     fun updateDetails(itemId: UUID, command: LessonDetailsCommand, editorId: UUID): LessonView {
         val courseId = requireCourseOfLessonItem(itemId)
-        if (!catalog.canEdit(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(catalog.canEdit(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
 
         val lesson = lessons.findById(itemId).orElseGet {
@@ -205,9 +205,10 @@ class LessonService(
         // Media ids are deliberately never given back to the client, so an
         // author changing a description has nothing to re-send; demanding it
         // made every edit after the first one impossible.
-        val mediaId = command.mediaId
-            ?: existing?.mediaId
-            ?: throw BusinessRuleException("MEDIA_REQUIRED", "A file lesson needs a mediaId")
+        val mediaId = requireRule(
+            command.mediaId ?: existing?.mediaId,
+            "MEDIA_REQUIRED",
+        ) { "A file lesson needs a mediaId" }
 
         val media = requireAttachable(mediaId, courseId, editorId)
         val isNewFile = existing == null || existing.mediaId != mediaId
@@ -247,21 +248,18 @@ class LessonService(
 
     private fun writeUrl(resourceId: UUID, command: SaveLessonCommand) {
         val url = command.url?.trim()
-        if (url.isNullOrBlank()) {
-            throw BusinessRuleException("URL_REQUIRED", "A link lesson needs a url")
-        }
+        requireRule(!url.isNullOrBlank(), "URL_REQUIRED") { "A link lesson needs a url" }
         // Only http(s): a javascript: or data: link would be handed straight to
         // a student's browser.
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            throw BusinessRuleException("INVALID_URL", "Only http and https URLs are allowed")
+        requireRule(url.startsWith("http://") || url.startsWith("https://"), "INVALID_URL") {
+            "Only http and https URLs are allowed"
         }
         val existing = urls.findById(resourceId).orElse(null)
         if (existing == null) urls.save(ResourceUrl(resourceId = resourceId, url = url)) else existing.url = url
     }
 
     private fun writeInline(resourceId: UUID, command: SaveLessonCommand) {
-        val body = command.content
-            ?: throw BusinessRuleException("CONTENT_REQUIRED", "A written lesson needs content")
+        val body = requireRule(command.content, "CONTENT_REQUIRED") { "A written lesson needs content" }
         val format = command.contentFormat ?: ResourceContentType.MARKDOWN
         val existing = contents.findById(resourceId).orElse(null)
         if (existing == null) {
@@ -304,8 +302,10 @@ class LessonService(
     @Transactional(readOnly = true)
     fun get(itemId: UUID, viewerId: UUID): LessonView {
         requireReadableLesson(itemId, viewerId)
-        val lesson = lessons.findById(itemId)
-            .orElseThrow { NotFoundException("LESSON_NOT_FOUND", "Lesson not found") }
+        val lesson = requireFound(
+            lessons.findById(itemId).orElse(null),
+            "LESSON_NOT_FOUND",
+        ) { "Lesson not found" }
         return view(lesson, requireMaterial(lesson))
     }
 
@@ -318,12 +318,18 @@ class LessonService(
     @Transactional(readOnly = true)
     fun contentUrl(itemId: UUID, viewerId: UUID): URI {
         requireReadableLesson(itemId, viewerId)
-        val lesson = lessons.findById(itemId)
-            .orElseThrow { NotFoundException("LESSON_NOT_FOUND", "Lesson not found") }
-        val material = resolveBlock(lesson) { it.sourceType == SourceType.FILE }
-            ?: throw BusinessRuleException("LESSON_HAS_NO_FILE", "This lesson has no downloadable file")
-        val file = files.findById(requireNotNull(material.id))
-            .orElseThrow { NotFoundException("LESSON_FILE_MISSING", "Lesson file not found") }
+        val lesson = requireFound(
+            lessons.findById(itemId).orElse(null),
+            "LESSON_NOT_FOUND",
+        ) { "Lesson not found" }
+        val material = requireRule(
+            resolveBlock(lesson) { it.sourceType == SourceType.FILE },
+            "LESSON_HAS_NO_FILE",
+        ) { "This lesson has no downloadable file" }
+        val file = requireFound(
+            files.findById(requireNotNull(material.id)).orElse(null),
+            "LESSON_FILE_MISSING",
+        ) { "Lesson file not found" }
         return mediaService.downloadUrlForAuthorizedCaller(file.mediaId)
     }
 
@@ -350,16 +356,18 @@ class LessonService(
     private fun requireAttachable(mediaId: UUID, courseId: UUID, editorId: UUID) =
         mediaService.requireAvailable(mediaId).also { media ->
             val uploader = media.createdBy
-            if (uploader != editorId && (uploader == null || !catalog.canEdit(courseId, uploader))) {
-                throw ForbiddenException("MEDIA_ACCESS_DENIED", "That media object is not yours to attach")
-            }
+            requireAllowed(
+                uploader == editorId || (uploader != null && catalog.canEdit(courseId, uploader)),
+                "MEDIA_ACCESS_DENIED",
+            ) { "That media object is not yours to attach" }
         }
 
     private fun requireCourseOfLessonItem(itemId: UUID): UUID {
-        val courseId = catalog.courseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        if (catalog.itemType(itemId) != "LESSON") {
-            throw BusinessRuleException("NOT_A_LESSON_ITEM", "This course item is not a lesson")
+        val courseId = requireFound(catalog.courseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
+        requireRule(catalog.itemType(itemId) == "LESSON", "NOT_A_LESSON_ITEM") {
+            "This course item is not a lesson"
         }
         return courseId
     }
@@ -375,8 +383,10 @@ class LessonService(
 
     private fun requireMaterial(lesson: Lesson): Resource? =
         lesson.primaryResourceId?.let {
-            resources.findById(it)
-                .orElseThrow { NotFoundException("LESSON_CONTENT_MISSING", "Lesson content not found") }
+            requireFound(
+                resources.findById(it).orElse(null),
+                "LESSON_CONTENT_MISSING",
+            ) { "Lesson content not found" }
         }
 
     /**

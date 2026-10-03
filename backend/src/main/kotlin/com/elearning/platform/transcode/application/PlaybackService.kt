@@ -4,8 +4,8 @@ import com.elearning.learning.application.LessonService
 import com.elearning.platform.media.MediaObject
 import com.elearning.platform.media.MediaService
 import com.elearning.platform.media.ObjectStorage
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
@@ -86,8 +86,8 @@ class PlaybackService(
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .toSet()
-        if (name !in referenced) {
-            throw NotFoundException("VARIANT_NOT_FOUND", "This video has no such rendition")
+        requireFound(name in referenced, "VARIANT_NOT_FOUND") {
+            "This video has no such rendition"
         }
 
         val body = String(storage.get(manifest.bucket, keyFor(manifest.objectKey, name)))
@@ -104,13 +104,12 @@ class PlaybackService(
      * used by more than one lesson is encoded once and streams everywhere.
      */
     private fun manifestObjectFor(lessonId: UUID): MediaObject {
-        val sourceId = lessons.fileMediaIdOf(lessonId)
-            ?: throw BusinessRuleException("LESSON_HAS_NO_VIDEO", "This lesson has no video")
-        val manifestId = media.requireAvailable(sourceId).hlsManifestMediaId
-            ?: throw BusinessRuleException(
-                "STREAM_NOT_READY",
-                "This video is still being processed; the original download still works",
-            )
+        val sourceId = requireRule(lessons.fileMediaIdOf(lessonId), "LESSON_HAS_NO_VIDEO") {
+            "This lesson has no video"
+        }
+        val manifestId = requireRule(media.requireAvailable(sourceId).hlsManifestMediaId, "STREAM_NOT_READY") {
+            "This video is still being processed; the original download still works"
+        }
         return media.requireAvailable(manifestId)
     }
 
@@ -129,8 +128,8 @@ class PlaybackService(
      * prefix the encode wrote into.
      */
     private fun keyFor(manifestKey: String, name: String): String {
-        if (name.contains('/') || name.contains("..")) {
-            throw NotFoundException("VARIANT_NOT_FOUND", "This video has no such rendition")
+        requireFound(!name.contains('/') && !name.contains(".."), "VARIANT_NOT_FOUND") {
+            "This video has no such rendition"
         }
         val prefix = manifestKey.substringBeforeLast('/', "")
         return if (prefix.isEmpty()) name else "$prefix/$name"

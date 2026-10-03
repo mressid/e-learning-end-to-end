@@ -8,9 +8,9 @@ import com.elearning.assessment.infrastructure.QuestionOptionRepository
 import com.elearning.assessment.infrastructure.QuestionRepository
 import com.elearning.assessment.infrastructure.QuizAttemptRepository
 import com.elearning.assessment.infrastructure.QuizRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -42,8 +42,10 @@ class QuizAuthoringService(
     @Transactional(readOnly = true)
     fun quizForEditor(itemId: UUID, editorId: UUID): QuizWithActivity {
         requireEditor(itemId, editorId)
-        val quiz = quizzes.findById(itemId)
-            .orElseThrow { NotFoundException("QUIZ_NOT_FOUND", "Quiz not found") }
+        val quiz = requireFound(
+            quizzes.findById(itemId).orElse(null),
+            "QUIZ_NOT_FOUND",
+        ) { "Quiz not found" }
         return QuizWithActivity(quiz, attempts.existsByQuizId(itemId))
     }
 
@@ -52,8 +54,8 @@ class QuizAuthoringService(
         requireEditor(itemId, editorId)
 
         command.passingScore?.let {
-            if (it < BigDecimal.ZERO || it > HUNDRED) {
-                throw BusinessRuleException("INVALID_PASSING_SCORE", "Passing score must be between 0 and 100")
+            requireRule(it >= BigDecimal.ZERO && it <= HUNDRED, "INVALID_PASSING_SCORE") {
+                "Passing score must be between 0 and 100"
             }
         }
 
@@ -97,8 +99,9 @@ class QuizAuthoringService(
     @Transactional
     fun addQuestion(itemId: UUID, command: AddQuestionCommand, editorId: UUID): Question {
         requireEditor(itemId, editorId)
-        val quiz = quizzes.findById(itemId)
-            .orElseThrow { NotFoundException("QUIZ_NOT_FOUND", "Quiz not found") }
+        val quiz = requireFound(quizzes.findById(itemId).orElse(null), "QUIZ_NOT_FOUND") {
+            "Quiz not found"
+        }
         requireUnattempted(itemId, "no question can be added")
 
         validateOptions(command.type, command.options)
@@ -205,11 +208,11 @@ class QuizAuthoringService(
 
     /** The path names the quiz, so another quiz's question is simply not there. */
     private fun requireQuestionOf(itemId: UUID, questionId: UUID): Question {
-        val question = questions.findById(questionId)
-            .orElseThrow { NotFoundException("QUESTION_NOT_FOUND", "Question not found") }
-        if (question.quizId != itemId) {
-            throw NotFoundException("QUESTION_NOT_FOUND", "Question not found")
-        }
+        val question = requireFound(
+            questions.findById(questionId).orElse(null),
+            "QUESTION_NOT_FOUND",
+        ) { "Question not found" }
+        requireFound(question.quizId == itemId, "QUESTION_NOT_FOUND") { "Question not found" }
         return question
     }
 
@@ -222,8 +225,8 @@ class QuizAuthoringService(
      * so freezing the whole quiz is the rule worth having.
      */
     private fun requireUnattempted(itemId: UUID, reason: String) {
-        if (attempts.existsByQuizId(itemId)) {
-            throw BusinessRuleException("QUIZ_HAS_ATTEMPTS", "Students have already sat this quiz, so $reason")
+        requireRule(!attempts.existsByQuizId(itemId), "QUIZ_HAS_ATTEMPTS") {
+            "Students have already sat this quiz, so $reason"
         }
     }
 
@@ -234,27 +237,21 @@ class QuizAuthoringService(
      */
     private fun validateOptions(type: QuestionType, candidates: List<OptionCommand>) {
         if (!type.isAutoGradable) {
-            if (candidates.isNotEmpty()) {
-                throw BusinessRuleException(
-                    "OPTIONS_NOT_ALLOWED",
-                    "$type questions cannot have options",
-                )
+            requireRule(candidates.isEmpty(), "OPTIONS_NOT_ALLOWED") {
+                "$type questions cannot have options"
             }
             return
         }
 
-        if (candidates.size < 2) {
-            throw BusinessRuleException("OPTIONS_REQUIRED", "A choice question needs at least two options")
+        requireRule(candidates.size >= 2, "OPTIONS_REQUIRED") {
+            "A choice question needs at least two options"
         }
         val correct = candidates.count { it.isCorrect }
-        if (correct == 0) {
-            throw BusinessRuleException("NO_CORRECT_OPTION", "At least one option must be correct")
+        requireRule(correct > 0, "NO_CORRECT_OPTION") {
+            "At least one option must be correct"
         }
-        if (type != QuestionType.MULTIPLE_CHOICE && correct > 1) {
-            throw BusinessRuleException(
-                "TOO_MANY_CORRECT_OPTIONS",
-                "$type questions allow only one correct option",
-            )
+        requireRule(type == QuestionType.MULTIPLE_CHOICE || correct <= 1, "TOO_MANY_CORRECT_OPTIONS") {
+            "$type questions allow only one correct option"
         }
     }
 
@@ -268,14 +265,11 @@ class QuizAuthoringService(
         requireEditor(itemId, editorId)
         val current = questions.findByQuizIdOrderByPosition(itemId)
 
-        if (orderedIds.size != orderedIds.toSet().size) {
-            throw BusinessRuleException("DUPLICATE_IN_ORDER", "The order lists the same question twice")
+        requireRule(orderedIds.size == orderedIds.toSet().size, "DUPLICATE_IN_ORDER") {
+            "The order lists the same question twice"
         }
-        if (current.mapNotNull { it.id }.toSet() != orderedIds.toSet()) {
-            throw BusinessRuleException(
-                "INCOMPLETE_ORDER",
-                "The order must list every question exactly once",
-            )
+        requireRule(current.mapNotNull { it.id }.toSet() == orderedIds.toSet(), "INCOMPLETE_ORDER") {
+            "The order must list every question exactly once"
         }
 
         val byId = current.associateBy { requireNotNull(it.id) }
@@ -292,17 +286,20 @@ class QuizAuthoringService(
     }
 
     @Transactional(readOnly = true)
-    fun requireQuiz(itemId: UUID): Quiz = quizzes.findById(itemId)
-        .orElseThrow { NotFoundException("QUIZ_NOT_FOUND", "Quiz not found") }
+    fun requireQuiz(itemId: UUID): Quiz = requireFound(
+        quizzes.findById(itemId).orElse(null),
+        "QUIZ_NOT_FOUND",
+    ) { "Quiz not found" }
 
     private fun requireEditor(itemId: UUID, editorId: UUID) {
-        val courseId = context.courseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        if (context.itemType(itemId) != "QUIZ") {
-            throw BusinessRuleException("NOT_A_QUIZ_ITEM", "This course item is not a quiz")
+        val courseId = requireFound(context.courseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
         }
-        if (!context.canEditCourse(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireRule(context.itemType(itemId) == "QUIZ", "NOT_A_QUIZ_ITEM") {
+            "This course item is not a quiz"
+        }
+        requireAllowed(context.canEditCourse(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
     }
 

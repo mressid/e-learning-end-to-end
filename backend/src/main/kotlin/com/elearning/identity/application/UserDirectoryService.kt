@@ -10,9 +10,9 @@ import com.elearning.identity.infrastructure.InstructorRepository
 import com.elearning.identity.infrastructure.StudentRepository
 import com.elearning.identity.infrastructure.UserProfileRepository
 import com.elearning.identity.infrastructure.UserRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ConflictException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireNoConflict
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.PlatformAccess
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -64,7 +64,7 @@ class UserDirectoryService(
     @Transactional(readOnly = true)
     fun get(userId: UUID): User {
         platformAccess.require("user.read")
-        return users.findById(userId).orElseThrow { NotFoundException("USER_NOT_FOUND", "User not found") }
+        return requireFound(users.findById(userId).orElse(null), "USER_NOT_FOUND") { "User not found" }
     }
 
     /** Profiles for a page of users, in one query rather than one per row. */
@@ -87,18 +87,14 @@ class UserDirectoryService(
     @Transactional
     fun setStatus(userId: UUID, status: UserStatus): User {
         platformAccess.require("user.suspend")
-        val user = users.findById(userId)
-            .orElseThrow { NotFoundException("USER_NOT_FOUND", "User not found") }
+        val user = requireFound(users.findById(userId).orElse(null), "USER_NOT_FOUND") { "User not found" }
 
         // PENDING means "has not confirmed their address yet" and is reached by
         // registering, not by an administrator deciding it. Allowing it here
         // would let staff push a verified account back into a state only the
         // verification flow is supposed to produce.
-        if (status == UserStatus.PENDING) {
-            throw BusinessRuleException(
-                "INVALID_STATUS",
-                "PENDING is set by registration, not by an administrator",
-            )
+        requireRule(status != UserStatus.PENDING, "INVALID_STATUS") {
+            "PENDING is set by registration, not by an administrator"
         }
 
         val previous = user.status
@@ -152,11 +148,11 @@ class UserDirectoryService(
 
         // Checked for a precise error code; the unique constraints remain the
         // actual guarantee against a race.
-        if (users.existsByEmailIgnoreCase(command.email)) {
-            throw ConflictException("EMAIL_ALREADY_REGISTERED", "That email address is already registered")
+        requireNoConflict(!users.existsByEmailIgnoreCase(command.email), "EMAIL_ALREADY_REGISTERED") {
+            "That email address is already registered"
         }
-        if (users.existsByUsernameIgnoreCase(command.username)) {
-            throw ConflictException("USERNAME_TAKEN", "That username is already taken")
+        requireNoConflict(!users.existsByUsernameIgnoreCase(command.username), "USERNAME_TAKEN") {
+            "That username is already taken"
         }
 
         val email = command.email.lowercase()
@@ -204,8 +200,7 @@ class UserDirectoryService(
     @Transactional
     fun setPassword(userId: UUID, newPassword: String): User {
         platformAccess.require("user.write")
-        val user = users.findById(userId)
-            .orElseThrow { NotFoundException("USER_NOT_FOUND", "User not found") }
+        val user = requireFound(users.findById(userId).orElse(null), "USER_NOT_FOUND") { "User not found" }
 
         user.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))
         user.updatedAt = Instant.now()
@@ -234,16 +229,15 @@ class UserDirectoryService(
     @Transactional
     fun update(userId: UUID, command: UpdateUserCommand): User {
         platformAccess.require("user.write")
-        val user = users.findById(userId)
-            .orElseThrow { NotFoundException("USER_NOT_FOUND", "User not found") }
+        val user = requireFound(users.findById(userId).orElse(null), "USER_NOT_FOUND") { "User not found" }
 
         val changed = mutableMapOf<String, Any>()
 
         command.email?.let { raw ->
             val email = raw.lowercase()
             if (email != user.email) {
-                if (users.existsByEmailIgnoreCase(email)) {
-                    throw ConflictException("EMAIL_ALREADY_REGISTERED", "That email address is already registered")
+                requireNoConflict(!users.existsByEmailIgnoreCase(email), "EMAIL_ALREADY_REGISTERED") {
+                    "That email address is already registered"
                 }
                 changed["email"] = email
                 user.email = email
@@ -252,8 +246,8 @@ class UserDirectoryService(
 
         command.username?.let { username ->
             if (username != user.username) {
-                if (users.existsByUsernameIgnoreCase(username)) {
-                    throw ConflictException("USERNAME_TAKEN", "That username is already taken")
+                requireNoConflict(!users.existsByUsernameIgnoreCase(username), "USERNAME_TAKEN") {
+                    "That username is already taken"
                 }
                 changed["username"] = username
                 user.username = username

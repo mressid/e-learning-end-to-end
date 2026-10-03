@@ -7,9 +7,9 @@ import com.elearning.assessment.domain.QuizResponse
 import com.elearning.assessment.infrastructure.QuestionRepository
 import com.elearning.assessment.infrastructure.QuizAttemptRepository
 import com.elearning.assessment.infrastructure.QuizResponseRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.events.QuizGraded
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -59,8 +59,8 @@ class QuizGradingService(
     @Transactional
     fun grade(attemptId: UUID, grades: List<ResponseGrade>, editorId: UUID): AttemptResult {
         val attempt = requireGradableAttempt(attemptId, editorId)
-        if (attempt.status == AttemptStatus.IN_PROGRESS) {
-            throw BusinessRuleException("ATTEMPT_NOT_SUBMITTED", "This attempt has not been submitted yet")
+        requireRule(attempt.status != AttemptStatus.IN_PROGRESS, "ATTEMPT_NOT_SUBMITTED") {
+            "This attempt has not been submitted yet"
         }
 
         val allResponses = responses.findByAttemptId(attemptId).associateBy { requireNotNull(it.id) }
@@ -68,23 +68,16 @@ class QuizGradingService(
             .associateBy { requireNotNull(it.id) }
 
         grades.forEach { grade ->
-            val response = allResponses[grade.responseId]
-                ?: throw BusinessRuleException("UNKNOWN_RESPONSE", "A grade refers to an answer not in this attempt")
+            val response = requireRule(allResponses[grade.responseId], "UNKNOWN_RESPONSE") {
+                "A grade refers to an answer not in this attempt"
+            }
             val question = requireNotNull(questionsById[response.questionId])
 
-            if (question.type.isAutoGradable) {
-                // Letting an instructor overwrite a machine-graded answer would
-                // silently diverge from the answer key.
-                throw BusinessRuleException(
-                    "NOT_MANUALLY_GRADED",
-                    "Choice questions are graded automatically and cannot be overridden",
-                )
+            requireRule(!question.type.isAutoGradable, "NOT_MANUALLY_GRADED") {
+                "Choice questions are graded automatically and cannot be overridden"
             }
-            if (grade.pointsAwarded < BigDecimal.ZERO || grade.pointsAwarded > question.points) {
-                throw BusinessRuleException(
-                    "INVALID_POINTS",
-                    "Points must be between 0 and ${question.points}",
-                )
+            requireRule(grade.pointsAwarded >= BigDecimal.ZERO && grade.pointsAwarded <= question.points, "INVALID_POINTS") {
+                "Points must be between 0 and ${question.points}"
             }
             response.pointsAwarded = grade.pointsAwarded
             response.isCorrect = grade.pointsAwarded >= question.points
@@ -94,12 +87,8 @@ class QuizGradingService(
             val question = questionsById[it.questionId]
             question != null && !question.type.isAutoGradable && it.pointsAwarded == null
         }
-        if (stillUngraded > 0) {
-            // Publishing a partial score would understate the student's result.
-            throw BusinessRuleException(
-                "GRADING_INCOMPLETE",
-                "$stillUngraded written answer(s) still need a mark",
-            )
+        requireRule(stillUngraded == 0, "GRADING_INCOMPLETE") {
+            "$stillUngraded written answer(s) still need a mark"
         }
 
         val score = totalScore(questionsById.values, allResponses.values)
@@ -128,12 +117,15 @@ class QuizGradingService(
     }
 
     private fun requireGradableAttempt(attemptId: UUID, editorId: UUID): QuizAttempt {
-        val attempt = attempts.findById(attemptId)
-            .orElseThrow { NotFoundException("ATTEMPT_NOT_FOUND", "Attempt not found") }
-        val courseId = context.courseIdOfItem(attempt.quizId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        if (!context.canEditCourse(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to grade this course")
+        val attempt = requireFound(
+            attempts.findById(attemptId).orElse(null),
+            "ATTEMPT_NOT_FOUND",
+        ) { "Attempt not found" }
+        val courseId = requireFound(context.courseIdOfItem(attempt.quizId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
+        requireAllowed(context.canEditCourse(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to grade this course"
         }
         return attempt
     }

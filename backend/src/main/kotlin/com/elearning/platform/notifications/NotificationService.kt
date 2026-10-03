@@ -2,8 +2,8 @@ package com.elearning.platform.notifications
 
 import com.elearning.identity.infrastructure.UserRepository
 import com.elearning.platform.email.EmailSender
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -117,10 +117,11 @@ class NotificationService(
 
     @Transactional
     fun markRead(notificationId: UUID, userId: UUID): Notification {
-        val notification = notifications.findById(notificationId)
-            .orElseThrow { NotFoundException("NOTIFICATION_NOT_FOUND", "Notification not found") }
-        if (notification.userId != userId) {
-            throw ForbiddenException("NOTIFICATION_ACCESS_DENIED", "This notification is not yours")
+        val notification = requireFound(notifications.findById(notificationId).orElse(null), "NOTIFICATION_NOT_FOUND") {
+            "Notification not found"
+        }
+        requireAllowed(notification.userId == userId, "NOTIFICATION_ACCESS_DENIED") {
+            "This notification is not yours"
         }
         notification.markRead()
         return notification

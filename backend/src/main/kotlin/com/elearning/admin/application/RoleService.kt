@@ -12,10 +12,10 @@ import com.elearning.admin.infrastructure.PermissionRepository
 import com.elearning.admin.infrastructure.RolePermissionRepository
 import com.elearning.admin.infrastructure.RoleRepository
 import com.elearning.courses.application.SlugGenerator
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ConflictException
-import com.elearning.shared.errors.NotFoundException
 import com.elearning.platform.audit.AuditService
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireNoConflict
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -52,8 +52,8 @@ class RoleService(
     @Transactional
     fun create(name: String, description: String?, codes: List<String>): Role {
         val slug = SlugGenerator.slugify(name, SLUG_MAX).ifBlank { "role" }
-        if (roles.existsBySlug(slug)) {
-            throw ConflictException("ROLE_EXISTS", "A role named \"$name\" already exists")
+        requireNoConflict(!roles.existsBySlug(slug), "ROLE_EXISTS") {
+            "A role named \"$name\" already exists"
         }
         val role = roles.save(Role(name = name, slug = slug, description = description))
         replacePermissions(requireNotNull(role.id), codes)
@@ -69,14 +69,11 @@ class RoleService(
 
     @Transactional
     fun setPermissions(roleId: UUID, codes: List<String>): Role {
-        val role = roles.findById(roleId).orElseThrow { unknownRole() }
+        val role = requireFound(roles.findById(roleId).orElse(null), "ROLE_NOT_FOUND") { "No such role" }
         // A super role is "everything, including future permissions"; writing a
         // fixed list onto it would turn that into "everything as of today".
-        if (role.isSuper) {
-            throw BusinessRuleException(
-                "SUPER_ROLE_IMMUTABLE",
-                "The super admin role always holds every permission and cannot be edited",
-            )
+        requireRule(!role.isSuper, "SUPER_ROLE_IMMUTABLE") {
+            "The super admin role always holds every permission and cannot be edited"
         }
         replacePermissions(roleId, codes)
         role.updatedAt = Instant.now()
@@ -85,9 +82,9 @@ class RoleService(
 
     @Transactional
     fun delete(roleId: UUID) {
-        val role = roles.findById(roleId).orElseThrow { unknownRole() }
-        if (role.isSystem) {
-            throw BusinessRuleException("SYSTEM_ROLE", "A system role cannot be deleted")
+        val role = requireFound(roles.findById(roleId).orElse(null), "ROLE_NOT_FOUND") { "No such role" }
+        requireRule(!role.isSystem, "SYSTEM_ROLE") {
+            "A system role cannot be deleted"
         }
         // Everyone holding it loses it, so their sessions must stop carrying
         // the permissions it granted.
@@ -105,10 +102,10 @@ class RoleService(
 
     @Transactional
     fun assign(adminUserId: UUID, roleId: UUID, grantedBy: UUID): AdminUserRole {
-        if (!adminUsers.existsById(adminUserId)) {
-            throw NotFoundException("ADMIN_NOT_FOUND", "No such administrator")
+        requireFound(adminUsers.existsById(adminUserId), "ADMIN_NOT_FOUND") {
+            "No such administrator"
         }
-        val role = roles.findById(roleId).orElseThrow { unknownRole() }
+        val role = requireFound(roles.findById(roleId).orElse(null), "ROLE_NOT_FOUND") { "No such role" }
 
         val id = AdminUserRoleId(adminUserId, roleId)
         val existing = adminUserRoles.findById(id).orElse(null)
@@ -134,14 +131,11 @@ class RoleService(
         val id = AdminUserRoleId(adminUserId, roleId)
         val grant = adminUserRoles.findById(id).orElse(null) ?: return
 
-        val role = roles.findById(roleId).orElseThrow { unknownRole() }
+        val role = requireFound(roles.findById(roleId).orElse(null), "ROLE_NOT_FOUND") { "No such role" }
         // Removing the last super admin leaves nobody able to grant the role
         // back: the platform locks itself out with no recovery short of SQL.
-        if (role.isSuper && roles.countSuperAdminGrants() <= 1) {
-            throw BusinessRuleException(
-                "LAST_SUPER_ADMIN",
-                "The last super admin cannot be demoted",
-            )
+        requireRule(!role.isSuper || roles.countSuperAdminGrants() > 1, "LAST_SUPER_ADMIN") {
+            "The last super admin cannot be demoted"
         }
         adminUserRoles.delete(grant)
         // A signed token cannot be withdrawn, so the permissions this role
@@ -173,8 +167,8 @@ class RoleService(
         // An unknown code would be a permission nothing enforces, so the role
         // would claim an authority it does not actually confer.
         val unknown = wanted.filterNot { it in known }
-        if (unknown.isNotEmpty()) {
-            throw NotFoundException("PERMISSION_NOT_FOUND", "No such permission: ${unknown.first()}")
+        requireFound(unknown.isEmpty(), "PERMISSION_NOT_FOUND") {
+            "No such permission: ${unknown.first()}"
         }
 
         rolePermissions.deleteByIdRoleId(roleId)
@@ -187,8 +181,6 @@ class RoleService(
             refreshTokens.revokeAllForAdmin(it.id.adminUserId)
         }
     }
-
-    private fun unknownRole() = NotFoundException("ROLE_NOT_FOUND", "No such role")
 
     private companion object {
         const val SLUG_MAX = 80

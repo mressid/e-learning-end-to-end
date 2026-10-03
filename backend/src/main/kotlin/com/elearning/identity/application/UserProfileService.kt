@@ -3,9 +3,9 @@ package com.elearning.identity.application
 import com.elearning.identity.domain.UserProfile
 import com.elearning.identity.infrastructure.UserProfileRepository
 import com.elearning.platform.media.MediaService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -23,13 +23,14 @@ class UserProfileService(
 ) {
 
     @Transactional(readOnly = true)
-    fun get(userId: UUID): UserProfile = profiles.findById(userId)
-        .orElseThrow { NotFoundException("PROFILE_NOT_FOUND", "Profile not found") }
+    fun get(userId: UUID): UserProfile =
+        requireFound(profiles.findById(userId).orElse(null), "PROFILE_NOT_FOUND") { "Profile not found" }
 
     @Transactional
     fun update(userId: UUID, command: UpdateProfileCommand): UserProfile {
-        val profile = profiles.findById(userId)
-            .orElseThrow { NotFoundException("PROFILE_NOT_FOUND", "Profile not found") }
+        val profile = requireFound(profiles.findById(userId).orElse(null), "PROFILE_NOT_FOUND") {
+            "Profile not found"
+        }
 
         command.firstName?.let { profile.firstName = it }
         command.lastName?.let { profile.lastName = it }
@@ -39,13 +40,13 @@ class UserProfileService(
 
         command.avatarMediaId?.let { avatarId ->
             val media = mediaService.requireAvailable(avatarId)
-            if (media.createdBy != userId) {
-                throw ForbiddenException("MEDIA_ACCESS_DENIED", "That image is not yours")
+            requireAllowed(media.createdBy == userId, "MEDIA_ACCESS_DENIED") {
+                "That image is not yours"
             }
             // Same rule as course thumbnails: an avatar is shown wherever the
             // user appears, so it needs a stable URL rather than one that expires.
-            if (mediaService.publicUrlsFor(listOf(avatarId)).isEmpty()) {
-                throw BusinessRuleException("AVATAR_MUST_BE_PUBLIC", "Upload the avatar with visibility PUBLIC")
+            requireRule(mediaService.publicUrlsFor(listOf(avatarId)).isNotEmpty(), "AVATAR_MUST_BE_PUBLIC") {
+                "Upload the avatar with visibility PUBLIC"
             }
             profile.avatarMediaId = avatarId
         }

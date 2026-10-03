@@ -1,8 +1,8 @@
 package com.elearning.platform.media
 
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
@@ -41,14 +41,14 @@ class MultipartUploadService(
      */
     @Transactional
     fun begin(command: BeginUploadCommand, uploaderId: UUID): MultipartTicket {
-        if (command.contentType.isBlank()) {
-            throw BusinessRuleException("MIME_TYPE_REQUIRED", "A content type is required")
+        requireRule(command.contentType.isNotBlank(), "MIME_TYPE_REQUIRED") {
+            "A content type is required"
         }
-        if (command.sizeBytes <= 0) {
+        requireRule(command.sizeBytes > 0, "SIZE_REQUIRED") {
             // The size decides the part plan, so it has to be real. It is still
             // not trusted for anything else - the stored size is read back from
             // storage on completion.
-            throw BusinessRuleException("SIZE_REQUIRED", "A resumable upload needs the file size")
+            "A resumable upload needs the file size"
         }
 
         val bucket = if (command.visibility == MediaVisibility.PUBLIC) {
@@ -82,8 +82,8 @@ class MultipartUploadService(
     @Transactional(readOnly = true)
     fun urlForPart(mediaId: UUID, partNumber: Int, uploaderId: UUID): URI {
         val record = requireInFlight(mediaId, uploaderId)
-        if (partNumber !in 1..MAX_PARTS) {
-            throw BusinessRuleException("INVALID_PART_NUMBER", "Part numbers run from 1 to $MAX_PARTS")
+        requireRule(partNumber in 1..MAX_PARTS, "INVALID_PART_NUMBER") {
+            "Part numbers run from 1 to $MAX_PARTS"
         }
         return storage.presignedUploadPart(
             record.bucket,
@@ -117,15 +117,16 @@ class MultipartUploadService(
     @Transactional
     fun complete(mediaId: UUID, parts: List<UploadedPart>, uploaderId: UUID): MediaObject {
         val record = requireInFlight(mediaId, uploaderId)
-        if (parts.isEmpty()) {
-            throw BusinessRuleException("NO_PARTS", "An upload needs at least one part")
+        requireRule(parts.isNotEmpty(), "NO_PARTS") {
+            "An upload needs at least one part"
         }
 
         val uploadId = requireNotNull(record.uploadId)
         storage.completeMultipartUpload(record.bucket, record.objectKey, uploadId, parts)
 
-        val stored = storage.statOf(record.bucket, record.objectKey)
-            ?: throw BusinessRuleException("UPLOAD_NOT_FOUND", "The assembled object is not in storage")
+        val stored = requireRule(storage.statOf(record.bucket, record.objectKey), "UPLOAD_NOT_FOUND") {
+            "The assembled object is not in storage"
+        }
 
         record.markAvailable(stored.sizeBytes, stored.checksum)
         // Cleared, so a finished object carries no pointer to an upload that no
@@ -150,16 +151,14 @@ class MultipartUploadService(
     }
 
     private fun requireInFlight(mediaId: UUID, uploaderId: UUID): MediaObject {
-        val record = media.findById(mediaId)
-            .orElseThrow { NotFoundException("MEDIA_NOT_FOUND", "No such media object") }
-        if (record.createdBy != uploaderId) {
-            throw ForbiddenException("MEDIA_ACCESS_DENIED", "That upload is not yours")
+        val record = requireFound(media.findById(mediaId).orElse(null), "MEDIA_NOT_FOUND") {
+            "No such media object"
         }
-        if (record.uploadId == null) {
-            throw BusinessRuleException(
-                "NOT_A_RESUMABLE_UPLOAD",
-                "This upload has already finished, or was never resumable",
-            )
+        requireAllowed(record.createdBy == uploaderId, "MEDIA_ACCESS_DENIED") {
+            "That upload is not yours"
+        }
+        requireRule(record.uploadId != null, "NOT_A_RESUMABLE_UPLOAD") {
+            "This upload has already finished, or was never resumable"
         }
         return record
     }

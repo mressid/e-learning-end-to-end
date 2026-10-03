@@ -22,9 +22,9 @@ import com.elearning.learning.infrastructure.ResourceRepository
 import com.elearning.learning.infrastructure.ResourceUrlRepository
 import com.elearning.learning.infrastructure.SectionResourceRepository
 import com.elearning.platform.media.MediaService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
@@ -68,12 +68,9 @@ class ResourceService(
         // resource with no backing row would be unreadable forever.
         when (command.sourceType) {
             SourceType.FILE -> {
-                val mediaId = command.mediaId
-                    ?: throw BusinessRuleException("MEDIA_REQUIRED", "A FILE resource needs a mediaId")
+                val mediaId = requireRule(command.mediaId, "MEDIA_REQUIRED") { "A FILE resource needs a mediaId" }
                 val media = mediaService.requireAvailable(mediaId)
-                if (media.createdBy != creatorId) {
-                    throw ForbiddenException("MEDIA_ACCESS_DENIED", "That file is not yours to use")
-                }
+                requireAllowed(media.createdBy == creatorId, "MEDIA_ACCESS_DENIED") { "That file is not yours to use" }
                 files.save(
                     ResourceFile(
                         resourceId = resourceId,
@@ -87,19 +84,16 @@ class ResourceService(
             }
             SourceType.URL -> {
                 val url = command.url?.trim()
-                if (url.isNullOrBlank()) {
-                    throw BusinessRuleException("URL_REQUIRED", "A URL resource needs a url")
-                }
+                requireRule(!url.isNullOrBlank(), "URL_REQUIRED") { "A URL resource needs a url" }
                 // Only http(s): a javascript: or data: link would be handed
                 // straight to a student's browser.
-                if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                    throw BusinessRuleException("INVALID_URL", "Only http and https URLs are allowed")
+                requireRule(url.startsWith("http://") || url.startsWith("https://"), "INVALID_URL") {
+                    "Only http and https URLs are allowed"
                 }
                 urls.save(ResourceUrl(resourceId = resourceId, url = url))
             }
             SourceType.INLINE -> {
-                val body = command.content
-                    ?: throw BusinessRuleException("CONTENT_REQUIRED", "An INLINE resource needs content")
+                val body = requireRule(command.content, "CONTENT_REQUIRED") { "An INLINE resource needs content" }
                 contents.save(
                     ResourceContent(
                         resourceId = resourceId,
@@ -136,11 +130,11 @@ class ResourceService(
             SourceType.INLINE -> {
                 val body = command.content
                 if (body != null) {
-                    val existing = contents.findById(resourceId).orElse(null)
-                        ?: throw NotFoundException("RESOURCE_CONTENT_MISSING", "Resource content not found")
-                    if (body.isBlank()) {
-                        throw BusinessRuleException("CONTENT_REQUIRED", "An INLINE resource needs content")
-                    }
+                    val existing = requireFound(
+                        contents.findById(resourceId).orElse(null),
+                        "RESOURCE_CONTENT_MISSING",
+                    ) { "Resource content not found" }
+                    requireRule(!body.isBlank(), "CONTENT_REQUIRED") { "An INLINE resource needs content" }
                     existing.content = body
                     command.contentType?.let { existing.contentType = it }
                 } else if (command.contentType != null) {
@@ -150,11 +144,9 @@ class ResourceService(
             SourceType.URL -> {
                 val url = command.url?.trim()
                 if (url != null) {
-                    if (url.isBlank()) {
-                        throw BusinessRuleException("URL_REQUIRED", "A URL resource needs a url")
-                    }
-                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                        throw BusinessRuleException("INVALID_URL", "Only http and https URLs are allowed")
+                    requireRule(!url.isBlank(), "URL_REQUIRED") { "A URL resource needs a url" }
+                    requireRule(url.startsWith("http://") || url.startsWith("https://"), "INVALID_URL") {
+                        "Only http and https URLs are allowed"
                     }
                     urls.findById(resourceId).orElse(null)?.url = url
                 }
@@ -180,11 +172,13 @@ class ResourceService(
     fun downloadUrl(resourceId: UUID, viewerId: UUID): URI {
         val resource = requireResource(resourceId)
         requireCanRead(resource, viewerId)
-        if (resource.sourceType != SourceType.FILE) {
-            throw BusinessRuleException("NOT_A_FILE_RESOURCE", "This resource has no downloadable file")
+        requireRule(resource.sourceType == SourceType.FILE, "NOT_A_FILE_RESOURCE") {
+            "This resource has no downloadable file"
         }
-        val file = files.findById(resourceId)
-            .orElseThrow { NotFoundException("RESOURCE_FILE_MISSING", "Resource file not found") }
+        val file = requireFound(
+            files.findById(resourceId).orElse(null),
+            "RESOURCE_FILE_MISSING",
+        ) { "Resource file not found" }
         return mediaService.downloadUrlForAuthorizedCaller(file.mediaId)
     }
 
@@ -271,14 +265,11 @@ class ResourceService(
         // an order that has since changed. Renumbering the rest around it would
         // silently drop whatever it thought it was moving.
         val unknown = orderedResourceIds.filterNot(known::containsKey)
-        if (unknown.isNotEmpty()) {
-            throw BusinessRuleException(
-                "RESOURCE_NOT_ATTACHED",
-                "Some of those resources are not attached to this item",
-            )
+        requireRule(unknown.isEmpty(), "RESOURCE_NOT_ATTACHED") {
+            "Some of those resources are not attached to this item"
         }
-        if (orderedResourceIds.size != orderedResourceIds.distinct().size) {
-            throw BusinessRuleException("DUPLICATE_RESOURCE", "That order names a resource twice")
+        requireRule(orderedResourceIds.size == orderedResourceIds.distinct().size, "DUPLICATE_RESOURCE") {
+            "That order names a resource twice"
         }
 
         orderedResourceIds.forEachIndexed { index, resourceId ->
@@ -331,8 +322,10 @@ class ResourceService(
         )
     }
 
-    private fun requireResource(resourceId: UUID): Resource = resources.findById(resourceId)
-        .orElseThrow { NotFoundException("RESOURCE_NOT_FOUND", "Resource not found") }
+    private fun requireResource(resourceId: UUID): Resource = requireFound(
+        resources.findById(resourceId).orElse(null),
+        "RESOURCE_NOT_FOUND",
+    ) { "Resource not found" }
 
     /**
      * The creator always can. Otherwise it depends on being a participant of a
@@ -352,9 +345,7 @@ class ResourceService(
             itemAttachments.findByIdResourceId(resourceId)
                 .any { isParticipant(courseOfItem(it.id.courseItemId), viewerId) }
 
-        if (!reachable) {
-            throw ForbiddenException("RESOURCE_ACCESS_DENIED", "You cannot access this resource")
-        }
+        requireAllowed(reachable, "RESOURCE_ACCESS_DENIED") { "You cannot access this resource" }
     }
 
     /**
@@ -388,17 +379,14 @@ class ResourceService(
         // Attached to nothing yet: a block just created and not yet placed, or
         // a library material nobody has used. Its creator still owns it.
         if (courses.isEmpty()) {
-            if (resource.createdBy != editorId) {
-                throw ForbiddenException("RESOURCE_ACCESS_DENIED", "That resource is not yours to change")
+            requireAllowed(resource.createdBy == editorId, "RESOURCE_ACCESS_DENIED") {
+                "That resource is not yours to change"
             }
             return
         }
 
-        if (!courses.all { catalog.canEdit(it, editorId) }) {
-            throw ForbiddenException(
-                "RESOURCE_SHARED",
-                "This material is used by a course you cannot edit. Copy it to change it here.",
-            )
+        requireAllowed(courses.all { catalog.canEdit(it, editorId) }, "RESOURCE_SHARED") {
+            "This material is used by a course you cannot edit. Copy it to change it here."
         }
     }
 
@@ -406,23 +394,26 @@ class ResourceService(
         catalog.canEdit(courseId, userId) || enrollmentService.hasActiveEnrollment(courseId, userId)
 
     private fun requireParticipant(courseId: UUID, userId: UUID) {
-        if (!isParticipant(courseId, userId)) {
-            throw ForbiddenException("NOT_A_PARTICIPANT", "You are not part of this course")
+        requireAllowed(isParticipant(courseId, userId), "NOT_A_PARTICIPANT") {
+            "You are not part of this course"
         }
     }
 
     private fun requireEditor(courseId: UUID, editorId: UUID) {
-        if (!catalog.canEdit(courseId, editorId)) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to modify this course")
+        requireAllowed(catalog.canEdit(courseId, editorId), "COURSE_ACCESS_DENIED") {
+            "You are not allowed to modify this course"
         }
     }
 
-    private fun courseOfSection(sectionId: UUID): UUID = sections.findById(sectionId)
-        .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        .courseId
+    private fun courseOfSection(sectionId: UUID): UUID = requireFound(
+        sections.findById(sectionId).orElse(null),
+        "SECTION_NOT_FOUND",
+    ) { "Section not found" }.courseId
 
-    private fun courseOfItem(itemId: UUID): UUID = catalog.courseIdOfItem(itemId)
-        ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
+    private fun courseOfItem(itemId: UUID): UUID = requireFound(
+        catalog.courseIdOfItem(itemId),
+        "COURSE_ITEM_NOT_FOUND",
+    ) { "Course item not found" }
 
 }
 

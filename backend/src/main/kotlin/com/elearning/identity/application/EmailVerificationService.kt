@@ -6,7 +6,7 @@ import com.elearning.identity.domain.UserStatus
 import com.elearning.identity.infrastructure.EmailVerificationTokenRepository
 import com.elearning.identity.infrastructure.UserRepository
 import com.elearning.platform.email.EmailSender
-import com.elearning.shared.errors.BusinessRuleException
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.JwtProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -59,18 +59,25 @@ class EmailVerificationService(
 
     @Transactional
     fun verify(rawToken: String, now: Instant = Instant.now()) {
-        val record = tokens.findByTokenHash(SecureTokens.hash(rawToken)).orElse(null)
-            ?: throw invalid()
+        val record = requireRule(
+            tokens.findByTokenHash(SecureTokens.hash(rawToken)).orElse(null),
+            "INVALID_VERIFICATION_TOKEN",
+        ) { "That verification link is invalid or has expired" }
 
-        if (record.isConsumed) {
-            // Distinguished on purpose: someone clicking their link twice should
-            // be told they are already verified, not handed an error suggesting
-            // the link was forged.
-            throw BusinessRuleException("ALREADY_VERIFIED", "This address is already verified")
+        // Distinguished on purpose: someone clicking their link twice should
+        // be told they are already verified, not handed an error suggesting
+        // the link was forged.
+        requireRule(!record.isConsumed, "ALREADY_VERIFIED") {
+            "This address is already verified"
         }
-        if (record.hasExpired(now)) throw invalid()
+        requireRule(!record.hasExpired(now), "INVALID_VERIFICATION_TOKEN") {
+            "That verification link is invalid or has expired"
+        }
 
-        val user = users.findById(record.userId).orElseThrow { invalid() }
+        val user = requireRule(
+            users.findById(record.userId).orElse(null),
+            "INVALID_VERIFICATION_TOKEN",
+        ) { "That verification link is invalid or has expired" }
         record.consume(now)
         // Only PENDING is promoted: a suspended account must not let itself back
         // in by clicking an old link.
@@ -104,7 +111,4 @@ class EmailVerificationService(
                 "If you did not create an account, ignore this message.",
         )
     }
-
-    private fun invalid() =
-        BusinessRuleException("INVALID_VERIFICATION_TOKEN", "That verification link is invalid or has expired")
 }

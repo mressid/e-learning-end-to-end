@@ -4,9 +4,9 @@ import com.elearning.learning.infrastructure.CertificateDetails
 import com.elearning.learning.infrastructure.CertificatePdfRenderer
 import com.elearning.learning.infrastructure.CertificateRepository
 import com.elearning.platform.media.MediaService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.events.CertificateIssued
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -72,13 +72,18 @@ class CertificateDocumentService(
      */
     @Transactional(readOnly = true)
     fun downloadUrl(certificateId: UUID, requesterId: UUID): URI {
-        val certificate = certificates.findById(certificateId)
-            .orElseThrow { NotFoundException("CERTIFICATE_NOT_FOUND", "Certificate not found") }
-        if (certificate.studentId != requesterId && !catalog.canEdit(certificate.courseId, requesterId)) {
-            throw ForbiddenException("CERTIFICATE_ACCESS_DENIED", "This certificate is not yours")
-        }
-        val mediaId = certificate.mediaId
-            ?: throw BusinessRuleException("CERTIFICATE_NOT_RENDERED", "The certificate document is not ready yet")
+        val certificate = requireFound(
+            certificates.findById(certificateId).orElse(null),
+            "CERTIFICATE_NOT_FOUND",
+        ) { "Certificate not found" }
+        requireAllowed(
+            certificate.studentId == requesterId || catalog.canEdit(certificate.courseId, requesterId),
+            "CERTIFICATE_ACCESS_DENIED",
+        ) { "This certificate is not yours" }
+        val mediaId = requireRule(
+            certificate.mediaId,
+            "CERTIFICATE_NOT_RENDERED",
+        ) { "The certificate document is not ready yet" }
         return media.downloadUrlForAuthorizedCaller(mediaId)
     }
 }

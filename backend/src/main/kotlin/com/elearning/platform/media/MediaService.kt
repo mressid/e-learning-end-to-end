@@ -1,8 +1,8 @@
 package com.elearning.platform.media
 
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
@@ -33,8 +33,8 @@ class MediaService(
 
     @Transactional
     fun requestUpload(command: RequestUploadCommand, uploaderId: UUID): UploadTicket {
-        if (command.contentType.isBlank()) {
-            throw BusinessRuleException("MIME_TYPE_REQUIRED", "A content type is required")
+        requireRule(command.contentType.isNotBlank(), "MIME_TYPE_REQUIRED") {
+            "A content type is required"
         }
 
         val key = objectKeyFor(command.filename)
@@ -68,8 +68,9 @@ class MediaService(
     fun completeUpload(mediaId: UUID, uploaderId: UUID): MediaObject {
         val record = requireOwned(mediaId, uploaderId)
 
-        val stored = storage.statOf(record.bucket, record.objectKey)
-            ?: throw BusinessRuleException("UPLOAD_NOT_FOUND", "No uploaded file was found for this media object")
+        val stored = requireRule(storage.statOf(record.bucket, record.objectKey), "UPLOAD_NOT_FOUND") {
+            "No uploaded file was found for this media object"
+        }
 
         // Size and checksum both come from storage, never from the client, so
         // the recorded metadata cannot disagree with the stored object.
@@ -80,8 +81,8 @@ class MediaService(
     @Transactional(readOnly = true)
     fun downloadUrl(mediaId: UUID, requesterId: UUID): URI {
         val record = requireOwned(mediaId, requesterId)
-        if (!record.isAvailable) {
-            throw BusinessRuleException("MEDIA_NOT_AVAILABLE", "This media object has no completed upload")
+        requireRule(record.isAvailable, "MEDIA_NOT_AVAILABLE") {
+            "This media object has no completed upload"
         }
         return storage.presignedDownload(record.bucket, record.objectKey, properties.presignedUrlTtl)
     }
@@ -162,10 +163,11 @@ class MediaService(
      */
     @Transactional(readOnly = true)
     fun requireAvailable(mediaId: UUID): MediaObject {
-        val record = media.findById(mediaId)
-            .orElseThrow { NotFoundException("MEDIA_NOT_FOUND", "Media object not found") }
-        if (!record.isAvailable) {
-            throw BusinessRuleException("MEDIA_NOT_AVAILABLE", "This media object has no completed upload")
+        val record = requireFound(media.findById(mediaId).orElse(null), "MEDIA_NOT_FOUND") {
+            "Media object not found"
+        }
+        requireRule(record.isAvailable, "MEDIA_NOT_AVAILABLE") {
+            "This media object has no completed upload"
         }
         return record
     }
@@ -190,10 +192,11 @@ class MediaService(
      * [downloadUrlForAuthorizedCaller] instead.
      */
     private fun requireOwned(mediaId: UUID, userId: UUID): MediaObject {
-        val record = media.findById(mediaId)
-            .orElseThrow { NotFoundException("MEDIA_NOT_FOUND", "Media object not found") }
-        if (record.createdBy != userId) {
-            throw ForbiddenException("MEDIA_ACCESS_DENIED", "This media object is not yours")
+        val record = requireFound(media.findById(mediaId).orElse(null), "MEDIA_NOT_FOUND") {
+            "Media object not found"
+        }
+        requireAllowed(record.createdBy == userId, "MEDIA_ACCESS_DENIED") {
+            "This media object is not yours"
         }
         return record
     }

@@ -11,9 +11,9 @@ import com.elearning.courses.infrastructure.CourseCategoryRepository
 import com.elearning.courses.infrastructure.CourseRepository
 import com.elearning.courses.infrastructure.CourseTagRepository
 import com.elearning.courses.infrastructure.TagRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ConflictException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireNoConflict
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.PlatformAccess
 import com.elearning.platform.audit.AuditService
 import org.springframework.stereotype.Service
@@ -72,9 +72,7 @@ class TaxonomyService(
         // Naming a category that does not exist is a mistake worth reporting:
         // silently dropping it would leave the editor believing it was applied.
         val missing = wanted.filterNot(found::containsKey)
-        if (missing.isNotEmpty()) {
-            throw NotFoundException("CATEGORY_NOT_FOUND", "No category with id ${missing.first()}")
-        }
+        requireFound(missing.isEmpty(), "CATEGORY_NOT_FOUND") { "No category with id ${missing.first()}" }
 
         courseCategories.deleteByIdCourseId(courseId)
         // The delete and the inserts share a transaction and both touch the
@@ -100,11 +98,8 @@ class TaxonomyService(
             val slug = SlugGenerator.slugify(raw, TAG_SLUG_MAX)
             if (slug.isNotBlank()) bySlug.putIfAbsent(slug, raw.trim().take(TAG_NAME_MAX))
         }
-        if (bySlug.size > MAX_TAGS_PER_COURSE) {
-            throw BusinessRuleException(
-                "TOO_MANY_TAGS",
-                "A course may carry at most $MAX_TAGS_PER_COURSE tags",
-            )
+        requireRule(bySlug.size <= MAX_TAGS_PER_COURSE, "TOO_MANY_TAGS") {
+            "A course may carry at most $MAX_TAGS_PER_COURSE tags"
         }
 
         val existing = tags.findBySlugIn(bySlug.keys).associateBy(Tag::slug)
@@ -132,8 +127,9 @@ class TaxonomyService(
         rows.groupBy(CourseTermRow::courseId) { TermView(it.termId, it.name, it.slug) }
 
     private fun requireEditor(courseId: UUID, editorId: UUID) {
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanEdit(course, editorId)
     }
 
@@ -151,11 +147,13 @@ class TaxonomyService(
         platformAccess.require("category.manage")
 
         val slug = SlugGenerator.slugify(name, CATEGORY_SLUG_MAX).ifBlank { "category" }
-        if (categories.findBySlug(slug) != null) {
-            throw ConflictException("CATEGORY_EXISTS", "A category named \"$name\" already exists")
+        requireNoConflict(categories.findBySlug(slug) == null, "CATEGORY_EXISTS") {
+            "A category named \"$name\" already exists"
         }
-        if (parentId != null && categories.findById(parentId).isEmpty) {
-            throw NotFoundException("CATEGORY_NOT_FOUND", "No category with id $parentId")
+        if (parentId != null) {
+            requireFound(categories.findById(parentId).isPresent, "CATEGORY_NOT_FOUND") {
+                "No category with id $parentId"
+            }
         }
         return categories.save(Category(parentId = parentId, name = name, slug = slug))
     }
@@ -170,8 +168,9 @@ class TaxonomyService(
     @Transactional
     fun renameCategory(categoryId: UUID, name: String): Category {
         platformAccess.require("category.manage")
-        val category = categories.findById(categoryId)
-            .orElseThrow { NotFoundException("CATEGORY_NOT_FOUND", "No such category") }
+        val category = requireFound(categories.findById(categoryId).orElse(null), "CATEGORY_NOT_FOUND") {
+            "No such category"
+        }
         category.name = name
         return category
     }
@@ -187,21 +186,16 @@ class TaxonomyService(
     @Transactional
     fun deleteCategory(categoryId: UUID) {
         platformAccess.require("category.manage")
-        val category = categories.findById(categoryId)
-            .orElseThrow { NotFoundException("CATEGORY_NOT_FOUND", "No such category") }
+        val category = requireFound(categories.findById(categoryId).orElse(null), "CATEGORY_NOT_FOUND") {
+            "No such category"
+        }
 
-        if (categories.existsByParentId(categoryId)) {
-            throw BusinessRuleException(
-                "CATEGORY_HAS_CHILDREN",
-                "Remove or re-parent its subcategories first",
-            )
+        requireRule(!categories.existsByParentId(categoryId), "CATEGORY_HAS_CHILDREN") {
+            "Remove or re-parent its subcategories first"
         }
         val inUse = courseCategories.countByIdCategoryId(categoryId)
-        if (inUse > 0) {
-            throw BusinessRuleException(
-                "CATEGORY_IN_USE",
-                "$inUse course(s) are still in this category",
-            )
+        requireRule(inUse == 0L, "CATEGORY_IN_USE") {
+            "$inUse course(s) are still in this category"
         }
         audit.record(
             action = "category.deleted",

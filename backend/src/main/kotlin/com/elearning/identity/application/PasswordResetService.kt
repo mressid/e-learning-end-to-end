@@ -5,7 +5,7 @@ import com.elearning.identity.domain.UserStatus
 import com.elearning.identity.infrastructure.PasswordResetTokenRepository
 import com.elearning.identity.infrastructure.UserRepository
 import com.elearning.platform.email.EmailSender
-import com.elearning.shared.errors.BusinessRuleException
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.JwtProperties
 import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -75,11 +75,18 @@ class PasswordResetService(
 
     @Transactional
     fun confirm(rawToken: String, newPassword: String, now: Instant = Instant.now()) {
-        val record = tokens.findByTokenHash(SecureTokens.hash(rawToken)).orElse(null)
-            ?: throw invalid()
-        if (!record.isRedeemable(now)) throw invalid()
+        val record = requireRule(
+            tokens.findByTokenHash(SecureTokens.hash(rawToken)).orElse(null),
+            "INVALID_RESET_TOKEN",
+        ) { "That reset link is invalid or has expired" }
+        requireRule(record.isRedeemable(now), "INVALID_RESET_TOKEN") {
+            "That reset link is invalid or has expired"
+        }
 
-        val user = users.findById(record.userId).orElseThrow { invalid() }
+        val user = requireRule(
+            users.findById(record.userId).orElse(null),
+            "INVALID_RESET_TOKEN",
+        ) { "That reset link is invalid or has expired" }
         record.consume(now)
         user.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))
         user.updatedAt = now
@@ -93,7 +100,4 @@ class PasswordResetService(
         // verification link, so a reset also settles a pending registration.
         if (user.status == UserStatus.PENDING) user.status = UserStatus.ACTIVE
     }
-
-    private fun invalid() =
-        BusinessRuleException("INVALID_RESET_TOKEN", "That reset link is invalid or has expired")
 }

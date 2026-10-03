@@ -6,9 +6,9 @@ import com.elearning.courses.domain.CourseStatus
 import com.elearning.courses.infrastructure.CourseItemRepository
 import com.elearning.courses.infrastructure.CourseRepository
 import com.elearning.platform.media.MediaService
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.PlatformAccess
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -42,11 +42,8 @@ class CourseService(
      */
     @Transactional
     fun create(command: CreateCourseCommand, ownerId: UUID): Course {
-        if (!users.isInstructor(ownerId)) {
-            throw BusinessRuleException(
-                "NOT_AN_INSTRUCTOR",
-                "Only an instructor account may own a course",
-            )
+        requireRule(users.isInstructor(ownerId), "NOT_AN_INSTRUCTOR") {
+            "Only an instructor account may own a course"
         }
         val course = courses.save(
             Course(
@@ -121,14 +118,12 @@ class CourseService(
 
         val media = mediaService.requireAvailable(mediaId)
         val uploader = media.createdBy
-        if (uploader != editorId && (uploader == null || !authorization.canEdit(course, uploader))) {
-            throw ForbiddenException("MEDIA_ACCESS_DENIED", "That image is not yours to attach")
-        }
-        if (mediaService.publicUrlsFor(listOf(mediaId)).isEmpty()) {
-            throw BusinessRuleException(
-                "THUMBNAIL_MUST_BE_PUBLIC",
-                "Upload the thumbnail with visibility PUBLIC",
-            )
+        requireAllowed(
+            uploader == editorId || (uploader != null && authorization.canEdit(course, uploader)),
+            "MEDIA_ACCESS_DENIED",
+        ) { "That image is not yours to attach" }
+        requireRule(mediaService.publicUrlsFor(listOf(mediaId)).isNotEmpty(), "THUMBNAIL_MUST_BE_PUBLIC") {
+            "Upload the thumbnail with visibility PUBLIC"
         }
 
         course.thumbnailMediaId = mediaId
@@ -171,7 +166,7 @@ class CourseService(
         try {
             course.publish(itemCount)
         } catch (ex: IllegalArgumentException) {
-            throw BusinessRuleException("COURSE_NOT_PUBLISHABLE", ex.message ?: "Course cannot be published")
+            requireRule(false, "COURSE_NOT_PUBLISHABLE") { ex.message ?: "Course cannot be published" }
         }
         return course
     }
@@ -192,8 +187,10 @@ class CourseService(
         return course
     }
 
-    private fun findOrThrow(courseId: UUID): Course = courses.findById(courseId)
-        .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+    private fun findOrThrow(courseId: UUID): Course = requireFound(
+        courses.findById(courseId).orElse(null),
+        "COURSE_NOT_FOUND",
+    ) { "Course not found" }
 }
 
 data class CreateCourseCommand(

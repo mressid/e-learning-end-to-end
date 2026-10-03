@@ -6,8 +6,8 @@ import com.elearning.courses.domain.CourseSection
 import com.elearning.courses.infrastructure.CourseItemRepository
 import com.elearning.courses.infrastructure.CourseRepository
 import com.elearning.courses.infrastructure.CourseSectionRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -34,8 +34,9 @@ class CourseStructureService(
 
     @Transactional
     fun addSection(courseId: UUID, title: String, description: String?, editorId: UUID): CourseSection {
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanEdit(course, editorId)
 
         return sections.save(
@@ -63,10 +64,12 @@ class CourseStructureService(
         description: String?,
         editorId: UUID,
     ): CourseSection {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") {
+            "Section not found"
+        }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanEdit(course, editorId)
 
         title?.let { section.title = it }
@@ -88,12 +91,9 @@ class CourseStructureService(
         isRequired: Boolean?,
         editorId: UUID,
     ): CourseItem {
-        val item = items.findById(itemId)
-            .orElseThrow { NotFoundException("ITEM_NOT_FOUND", "Item not found") }
-        val section = sections.findById(item.sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val item = requireFound(items.findById(itemId).orElse(null), "ITEM_NOT_FOUND") { "Item not found" }
+        val section = requireFound(sections.findById(item.sectionId).orElse(null), "SECTION_NOT_FOUND") { "Section not found" }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanEdit(course, editorId)
 
         title?.let { item.title = it }
@@ -103,18 +103,15 @@ class CourseStructureService(
 
     @Transactional(readOnly = true)
     fun listSections(courseId: UUID, viewerId: UUID?): List<CourseSection> {
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanView(course, viewerId)
         return sections.findByCourseIdOrderByPosition(courseId)
     }
 
     @Transactional
     fun addItem(sectionId: UUID, title: String, type: CourseItemType, isRequired: Boolean, editorId: UUID): CourseItem {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") { "Section not found" }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanEdit(course, editorId)
 
         return items.save(
@@ -139,8 +136,7 @@ class CourseStructureService(
      */
     @Transactional
     fun reorderSections(courseId: UUID, orderedIds: List<UUID>, editorId: UUID): List<CourseSection> {
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanEdit(course, editorId)
 
         val current = sections.findByCourseIdOrderByPosition(courseId)
@@ -153,10 +149,8 @@ class CourseStructureService(
 
     @Transactional
     fun reorderItems(sectionId: UUID, orderedIds: List<UUID>, editorId: UUID): List<CourseItem> {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") { "Section not found" }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanEdit(course, editorId)
 
         val current = items.findBySectionIdOrderByPosition(sectionId)
@@ -169,14 +163,11 @@ class CourseStructureService(
 
     /** The new order must be a permutation of what is there: no gaps, no strangers. */
     private fun requireExactCover(existing: List<UUID>, requested: List<UUID>, what: String) {
-        if (requested.size != requested.toSet().size) {
-            throw BusinessRuleException("DUPLICATE_IN_ORDER", "The order lists the same $what entry twice")
+        requireRule(requested.size == requested.toSet().size, "DUPLICATE_IN_ORDER") {
+            "The order lists the same $what entry twice"
         }
-        if (existing.toSet() != requested.toSet()) {
-            throw BusinessRuleException(
-                "INCOMPLETE_ORDER",
-                "The order must list every one of the $what exactly once",
-            )
+        requireRule(existing.toSet() == requested.toSet(), "INCOMPLETE_ORDER") {
+            "The order must list every one of the $what exactly once"
         }
     }
 
@@ -197,8 +188,7 @@ class CourseStructureService(
      */
     @Transactional
     fun deleteItem(itemId: UUID, editorId: UUID) {
-        val item = items.findById(itemId)
-            .orElseThrow { NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found") }
+        val item = requireFound(items.findById(itemId).orElse(null), "COURSE_ITEM_NOT_FOUND") { "Course item not found" }
         requireEditorOfSection(item.sectionId, editorId, "course.delete")
         requireNoStudentActivity(listOf(itemId))
         items.delete(item)
@@ -213,10 +203,8 @@ class CourseStructureService(
      */
     @Transactional
     fun deleteSection(sectionId: UUID, editorId: UUID) {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") { "Section not found" }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") { "Course not found" }
         authorization.requireCanEdit(course, editorId, "course.delete")
 
         val itemIds = items.findBySectionIdOrderByPosition(sectionId).mapNotNull { it.id }
@@ -227,10 +215,12 @@ class CourseStructureService(
     }
 
     private fun requireEditorOfSection(sectionId: UUID, editorId: UUID, orPermission: String? = null) {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") {
+            "Section not found"
+        }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         if (orPermission == null) {
             authorization.requireCanEdit(course, editorId)
         } else {
@@ -241,13 +231,10 @@ class CourseStructureService(
     private fun requireNoStudentActivity(itemIds: List<UUID>) {
         if (itemIds.isEmpty()) return
         val blocking = activityProbes.filter { it.hasStudentActivity(itemIds) }
-        if (blocking.isNotEmpty()) {
-            throw BusinessRuleException(
-                "ITEM_HAS_STUDENT_ACTIVITY",
-                "Cannot delete: this would destroy " +
-                    blocking.joinToString(" and ") { it.describe() } +
-                    ". Archive the course instead.",
-            )
+        requireRule(blocking.isEmpty(), "ITEM_HAS_STUDENT_ACTIVITY") {
+            "Cannot delete: this would destroy " +
+                blocking.joinToString(" and ") { it.describe() } +
+                ". Archive the course instead."
         }
     }
 
@@ -262,22 +249,27 @@ class CourseStructureService(
      */
     @Transactional(readOnly = true)
     fun getItem(itemId: UUID, viewerId: UUID?): CourseItem {
-        val item = items.findById(itemId)
-            .orElseThrow { NotFoundException("ITEM_NOT_FOUND", "Item not found") }
-        val section = sections.findById(item.sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val item = requireFound(items.findById(itemId).orElse(null), "ITEM_NOT_FOUND") {
+            "Item not found"
+        }
+        val section = requireFound(sections.findById(item.sectionId).orElse(null), "SECTION_NOT_FOUND") {
+            "Section not found"
+        }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanView(course, viewerId)
         return item
     }
 
     @Transactional(readOnly = true)
     fun listItems(sectionId: UUID, viewerId: UUID?): List<CourseItem> {
-        val section = sections.findById(sectionId)
-            .orElseThrow { NotFoundException("SECTION_NOT_FOUND", "Section not found") }
-        val course = courses.findById(section.courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val section = requireFound(sections.findById(sectionId).orElse(null), "SECTION_NOT_FOUND") {
+            "Section not found"
+        }
+        val course = requireFound(courses.findById(section.courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanView(course, viewerId)
         return items.findBySectionIdOrderByPosition(sectionId)
     }

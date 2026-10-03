@@ -4,9 +4,9 @@ import com.elearning.admin.domain.AdminStatus
 import com.elearning.admin.domain.AdminUser
 import com.elearning.admin.infrastructure.AdminUserRepository
 import com.elearning.shared.errors.ApiException
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ConflictException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireNoConflict
+import com.elearning.shared.errors.requireRule
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.http.HttpStatus
@@ -38,8 +38,10 @@ class AdminAccountService(
     fun list(pageable: Pageable): Page<AdminUser> = admins.findAllByOrderByCreatedAtDesc(pageable)
 
     @Transactional(readOnly = true)
-    fun get(adminUserId: UUID): AdminUser = admins.findById(adminUserId)
-        .orElseThrow { NotFoundException("ADMIN_NOT_FOUND", "No such administrator") }
+    fun get(adminUserId: UUID): AdminUser =
+        requireFound(admins.findById(adminUserId).orElse(null), "ADMIN_NOT_FOUND") {
+            "No such administrator"
+        }
 
     /**
      * Creates an administrator and, optionally, gives them their roles.
@@ -58,11 +60,11 @@ class AdminAccountService(
         roleIds: List<UUID> = emptyList(),
         grantedBy: UUID? = null,
     ): AdminUser {
-        if (admins.existsByEmailIgnoreCase(email)) {
-            throw ConflictException("EMAIL_ALREADY_REGISTERED", "That email already has an admin account")
+        requireNoConflict(!admins.existsByEmailIgnoreCase(email), "EMAIL_ALREADY_REGISTERED") {
+            "That email already has an admin account"
         }
-        if (admins.existsByUsernameIgnoreCase(username)) {
-            throw ConflictException("USERNAME_TAKEN", "That username is already taken")
+        requireNoConflict(!admins.existsByUsernameIgnoreCase(username), "USERNAME_TAKEN") {
+            "That username is already taken"
         }
         val created = admins.save(
             AdminUser(
@@ -96,8 +98,8 @@ class AdminAccountService(
         val admin = get(adminUserId)
         // Suspending the last super admin locks the platform out of its own
         // administration just as surely as demoting them does.
-        if (status != AdminStatus.ACTIVE && roles.isLastSuperAdmin(adminUserId)) {
-            throw BusinessRuleException("LAST_SUPER_ADMIN", "The last super admin cannot be suspended")
+        requireRule(status == AdminStatus.ACTIVE || !roles.isLastSuperAdmin(adminUserId), "LAST_SUPER_ADMIN") {
+            "The last super admin cannot be suspended"
         }
         val previous = admin.status
         admin.status = status
@@ -133,11 +135,8 @@ class AdminAccountService(
      */
     @Transactional
     fun setPassword(adminUserId: UUID, newPassword: String, actorId: UUID) {
-        if (adminUserId == actorId) {
-            throw BusinessRuleException(
-                "CANNOT_RESET_OWN_PASSWORD",
-                "Change your own password through /admin/auth/me/password, which asks for the current one",
-            )
+        requireRule(adminUserId != actorId, "CANNOT_RESET_OWN_PASSWORD") {
+            "Change your own password through /admin/auth/me/password, which asks for the current one"
         }
         val admin = get(adminUserId)
         admin.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))

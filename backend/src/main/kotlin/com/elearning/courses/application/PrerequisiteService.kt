@@ -7,8 +7,8 @@ import com.elearning.courses.infrastructure.CourseItemRepository
 import com.elearning.courses.infrastructure.CoursePrerequisiteNoteRepository
 import com.elearning.courses.infrastructure.CourseRepository
 import com.elearning.courses.infrastructure.ItemPrerequisiteRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -53,8 +53,9 @@ class PrerequisiteService(
     fun listCoursePrerequisites(courseId: UUID, viewerId: UUID?): List<PrerequisiteNoteView> {
         // Answering for a draft would confirm it exists, which is the whole
         // point of drafts returning 404 rather than 403 elsewhere.
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanView(course, viewerId)
 
         return notes.findByCourseIdOrderByPosition(courseId).map { PrerequisiteNoteView(it.text) }
@@ -66,8 +67,9 @@ class PrerequisiteService(
         texts: List<String>,
         editorId: UUID,
     ): List<PrerequisiteNoteView> {
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanEdit(course, editorId)
 
         // Blank entries would render as empty bullets, and duplicates as the
@@ -76,11 +78,8 @@ class PrerequisiteService(
             .filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
 
-        if (cleaned.size > MAX_NOTES) {
-            throw BusinessRuleException(
-                "TOO_MANY_PREREQUISITES",
-                "A course may state at most $MAX_NOTES prerequisites",
-            )
+        requireRule(cleaned.size <= MAX_NOTES, "TOO_MANY_PREREQUISITES") {
+            "A course may state at most $MAX_NOTES prerequisites"
         }
 
         notes.deleteByCourseId(courseId)
@@ -97,10 +96,12 @@ class PrerequisiteService(
 
     @Transactional(readOnly = true)
     fun listItemPrerequisites(itemId: UUID, viewerId: UUID?): List<PrerequisiteView> {
-        val courseId = items.findCourseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val courseId = requireFound(items.findCourseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         // Item titles of an unpublished course are not public; the section
         // listing already guards them the same way.
         authorization.requireCanView(course, viewerId)
@@ -118,31 +119,27 @@ class PrerequisiteService(
         prerequisiteIds: List<UUID>,
         editorId: UUID,
     ): List<PrerequisiteView> {
-        val courseId = items.findCourseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
-        val course = courses.findById(courseId)
-            .orElseThrow { NotFoundException("COURSE_NOT_FOUND", "Course not found") }
+        val courseId = requireFound(items.findCourseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
+        val course = requireFound(courses.findById(courseId).orElse(null), "COURSE_NOT_FOUND") {
+            "Course not found"
+        }
         authorization.requireCanEdit(course, editorId)
 
         val wanted = prerequisiteIds.distinct()
-        if (itemId in wanted) {
-            throw BusinessRuleException("SELF_PREREQUISITE", "An item cannot require itself")
-        }
+        requireRule(itemId !in wanted, "SELF_PREREQUISITE") { "An item cannot require itself" }
 
         val found = items.findAllById(wanted).associateBy { requireNotNull(it.id) }
         val missing = wanted.filterNot(found::containsKey)
-        if (missing.isNotEmpty()) {
-            throw NotFoundException("COURSE_ITEM_NOT_FOUND", "No item with id ${missing.first()}")
-        }
+        requireFound(missing.isEmpty(), "COURSE_ITEM_NOT_FOUND") { "No item with id ${missing.first()}" }
+
         // Gating an item behind one from another course would lock it forever:
         // the student would have to enrol elsewhere to unlock this course, and
         // nothing in the model says they may.
         val foreign = wanted.filter { items.findCourseIdOfItem(it) != courseId }
-        if (foreign.isNotEmpty()) {
-            throw BusinessRuleException(
-                "PREREQUISITE_OUTSIDE_COURSE",
-                "An item's prerequisites must belong to the same course",
-            )
+        requireRule(foreign.isEmpty(), "PREREQUISITE_OUTSIDE_COURSE") {
+            "An item's prerequisites must belong to the same course"
         }
 
         detectCycle(itemId, wanted) { itemPrerequisites.prerequisiteIdsOfAll(it) }
@@ -177,11 +174,8 @@ class PrerequisiteService(
         var frontier: Collection<UUID> = candidates
         while (frontier.isNotEmpty()) {
             val next = prerequisitesOf(frontier).toSet()
-            if (target in next) {
-                throw BusinessRuleException(
-                    "PREREQUISITE_CYCLE",
-                    "That would create a prerequisite loop, leaving both unreachable",
-                )
+            requireRule(target !in next, "PREREQUISITE_CYCLE") {
+                "That would create a prerequisite loop, leaving both unreachable"
             }
             frontier = next - visited
             visited += frontier

@@ -7,8 +7,8 @@ import com.elearning.learning.domain.ProgressStatus
 import com.elearning.learning.infrastructure.EnrollmentRepository
 import com.elearning.learning.infrastructure.LessonRepository
 import com.elearning.learning.infrastructure.LearningProgressRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.events.CertificateIssued
 import com.elearning.shared.events.CourseCompleted
 import org.springframework.context.ApplicationEventPublisher
@@ -34,16 +34,15 @@ class ProgressService(
 
     @Transactional
     fun record(itemId: UUID, studentId: UUID, command: RecordProgressCommand): LearningProgress {
-        val courseId = catalog.courseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
+        val courseId = requireFound(catalog.courseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") { "Course item not found" }
 
         // Authorization is by enrolment, not by a role: progress may only be
         // recorded against a course the student is actively enrolled in.
         val enrollment = enrollmentService.requireActiveEnrollment(courseId, studentId)
 
         command.progressPercent?.let {
-            if (it < BigDecimal.ZERO || it > HUNDRED) {
-                throw BusinessRuleException("INVALID_PROGRESS", "Progress must be between 0 and 100")
+            requireRule(it >= BigDecimal.ZERO && it <= HUNDRED, "INVALID_PROGRESS") {
+                "Progress must be between 0 and 100"
             }
         }
 
@@ -135,18 +134,17 @@ class ProgressService(
             .map { it.courseItemId }
             .toSet()
 
-        if (!completed.containsAll(required)) {
-            throw BusinessRuleException(
-                "ITEM_LOCKED",
-                "Finish this item's prerequisites first",
-            )
+        requireRule(completed.containsAll(required), "ITEM_LOCKED") {
+            "Finish this item's prerequisites first"
         }
     }
 
     @Transactional(readOnly = true)
     fun courseProgress(courseId: UUID, studentId: UUID): CourseProgressSummary {
-        enrollments.findByStudentIdAndCourseId(studentId, courseId)
-            .orElseThrow { NotFoundException("ENROLLMENT_NOT_FOUND", "You are not enrolled in this course") }
+        requireFound(
+            enrollments.findByStudentIdAndCourseId(studentId, courseId).orElse(null),
+            "ENROLLMENT_NOT_FOUND",
+        ) { "You are not enrolled in this course" }
         return summarise(courseId, studentId)
     }
 

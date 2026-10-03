@@ -3,8 +3,8 @@ package com.elearning.learning.application
 import com.elearning.learning.domain.Certificate
 import com.elearning.learning.infrastructure.CertificateRepository
 import com.elearning.shared.security.PlatformAccess
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
 import com.elearning.platform.audit.AuditService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -54,8 +54,10 @@ class CertificateService(
      */
     @Transactional(readOnly = true)
     fun verify(code: String): CertificateVerification {
-        val certificate = certificates.findByVerificationCode(code)
-            .orElseThrow { NotFoundException("CERTIFICATE_NOT_FOUND", "No certificate matches that code") }
+        val certificate = requireFound(
+            certificates.findByVerificationCode(code).orElse(null),
+            "CERTIFICATE_NOT_FOUND",
+        ) { "No certificate matches that code" }
         return CertificateVerification(
             certificateNumber = certificate.certificateNumber,
             courseId = certificate.courseId,
@@ -68,13 +70,14 @@ class CertificateService(
     /** Revocation is for course staff, e.g. after an academic-integrity finding. */
     @Transactional
     fun revoke(certificateId: UUID, editorId: UUID): Certificate {
-        val certificate = certificates.findById(certificateId)
-            .orElseThrow { NotFoundException("CERTIFICATE_NOT_FOUND", "Certificate not found") }
-        if (!catalog.canEdit(certificate.courseId, editorId) &&
-            !platformAccess.has("certificate.revoke")
-        ) {
-            throw ForbiddenException("COURSE_ACCESS_DENIED", "You are not allowed to manage this course")
-        }
+        val certificate = requireFound(
+            certificates.findById(certificateId).orElse(null),
+            "CERTIFICATE_NOT_FOUND",
+        ) { "Certificate not found" }
+        requireAllowed(
+            catalog.canEdit(certificate.courseId, editorId) || platformAccess.has("certificate.revoke"),
+            "COURSE_ACCESS_DENIED",
+        ) { "You are not allowed to manage this course" }
         certificate.revoke()
         audit.record(
             action = "certificate.revoked",

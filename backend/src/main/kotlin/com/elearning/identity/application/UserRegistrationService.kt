@@ -5,7 +5,7 @@ import com.elearning.identity.domain.UserProfile
 import com.elearning.identity.domain.UserStatus
 import com.elearning.identity.infrastructure.UserProfileRepository
 import com.elearning.identity.infrastructure.UserRepository
-import com.elearning.shared.errors.ConflictException
+import com.elearning.shared.errors.requireNoConflict
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -32,11 +32,11 @@ class UserRegistrationService(
     fun register(command: RegisterUserCommand): Student {
         // Checked explicitly so the caller gets a precise error code. The unique
         // constraints in the database remain the actual guarantee against races.
-        if (users.existsByEmailIgnoreCase(command.email)) {
-            throw ConflictException("EMAIL_ALREADY_REGISTERED", "That email address is already registered")
+        requireNoConflict(!users.existsByEmailIgnoreCase(command.email), "EMAIL_ALREADY_REGISTERED") {
+            "That email address is already registered"
         }
-        if (users.existsByUsernameIgnoreCase(command.username)) {
-            throw ConflictException("USERNAME_TAKEN", "That username is already taken")
+        requireNoConflict(!users.existsByUsernameIgnoreCase(command.username), "USERNAME_TAKEN") {
+            "That username is already taken"
         }
 
         val user = users.save(

@@ -10,9 +10,9 @@ import com.elearning.assessment.infrastructure.QuestionOptionRepository
 import com.elearning.assessment.infrastructure.QuestionRepository
 import com.elearning.assessment.infrastructure.QuizAttemptRepository
 import com.elearning.assessment.infrastructure.QuizResponseRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -43,8 +43,8 @@ class QuizAttemptService(
         requireEnrolled(itemId, studentId)
 
         val questionList = questions.findByQuizIdOrderByPosition(itemId)
-        if (questionList.isEmpty()) {
-            throw BusinessRuleException("QUIZ_HAS_NO_QUESTIONS", "This quiz has no questions yet")
+        requireRule(questionList.isNotEmpty(), "QUIZ_HAS_NO_QUESTIONS") {
+            "This quiz has no questions yet"
         }
 
         val previous = attempts.findByQuizIdAndStudentIdOrderByAttemptNumberDesc(itemId, studentId)
@@ -59,8 +59,8 @@ class QuizAttemptService(
             }
         }
 
-        if (!quiz.allowsAnotherAttempt(previous.size)) {
-            throw BusinessRuleException("NO_ATTEMPTS_LEFT", "You have used all attempts for this quiz")
+        requireRule(quiz.allowsAnotherAttempt(previous.size), "NO_ATTEMPTS_LEFT") {
+            "You have used all attempts for this quiz"
         }
 
         val attempt = attempts.save(
@@ -83,14 +83,17 @@ class QuizAttemptService(
     @Transactional
     fun submit(attemptId: UUID, studentId: UUID, answers: List<SubmittedAnswer>): AttemptResult {
         val attempt = requireOwnAttempt(attemptId, studentId)
-        if (!attempt.isOpen) {
-            throw BusinessRuleException("ATTEMPT_CLOSED", "This attempt has already been submitted")
+        requireRule(attempt.isOpen, "ATTEMPT_CLOSED") {
+            "This attempt has already been submitted"
         }
 
         val quiz = authoring.requireQuiz(attempt.quizId)
-        if (attempt.hasExpired(quiz.timeLimitSeconds)) {
+        val expired = attempt.hasExpired(quiz.timeLimitSeconds)
+        if (expired) {
             attempt.expire()
-            throw BusinessRuleException("ATTEMPT_EXPIRED", "The time limit for this attempt has passed")
+        }
+        requireRule(!expired, "ATTEMPT_EXPIRED") {
+            "The time limit for this attempt has passed"
         }
 
         val questionList = questions.findByQuizIdOrderByPosition(attempt.quizId)
@@ -153,8 +156,8 @@ class QuizAttemptService(
 
     /** Rejects an answer aimed at a question that is not in this quiz. */
     private fun List<SubmittedAnswer>.requireAllKnown(known: Map<UUID, Question>) {
-        firstOrNull { it.questionId !in known }?.let {
-            throw BusinessRuleException("UNKNOWN_QUESTION", "An answer refers to a question not in this quiz")
+        requireRule(none { it.questionId !in known }, "UNKNOWN_QUESTION") {
+            "An answer refers to a question not in this quiz"
         }
     }
 
@@ -211,17 +214,20 @@ class QuizAttemptService(
     }
 
     private fun requireOwnAttempt(attemptId: UUID, studentId: UUID): QuizAttempt {
-        val attempt = attempts.findById(attemptId)
-            .orElseThrow { NotFoundException("ATTEMPT_NOT_FOUND", "Attempt not found") }
-        if (attempt.studentId != studentId) {
-            throw ForbiddenException("ATTEMPT_ACCESS_DENIED", "This attempt is not yours")
+        val attempt = requireFound(
+            attempts.findById(attemptId).orElse(null),
+            "ATTEMPT_NOT_FOUND",
+        ) { "Attempt not found" }
+        requireAllowed(attempt.studentId == studentId, "ATTEMPT_ACCESS_DENIED") {
+            "This attempt is not yours"
         }
         return attempt
     }
 
     private fun requireEnrolled(itemId: UUID, studentId: UUID) {
-        val courseId = context.courseIdOfItem(itemId)
-            ?: throw NotFoundException("COURSE_ITEM_NOT_FOUND", "Course item not found")
+        val courseId = requireFound(context.courseIdOfItem(itemId), "COURSE_ITEM_NOT_FOUND") {
+            "Course item not found"
+        }
         context.requireActiveEnrollment(courseId, studentId)
     }
 

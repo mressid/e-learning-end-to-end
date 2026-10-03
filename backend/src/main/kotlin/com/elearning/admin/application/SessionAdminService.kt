@@ -5,7 +5,7 @@ import com.elearning.identity.application.RefreshTokenService
 import com.elearning.identity.infrastructure.RefreshTokenRepository
 import com.elearning.identity.infrastructure.SessionRow
 import com.elearning.platform.audit.AuditService
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
 import com.elearning.shared.security.PlatformAccess
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -62,7 +62,7 @@ class SessionAdminService(
     fun revokeUserSession(familyId: UUID) {
         platformAccess.require("settings.manage")
         val family = userTokens.findByFamilyId(familyId)
-        if (family.isEmpty()) throw NotFoundException("SESSION_NOT_FOUND", "No such session")
+        requireFound(family.isNotEmpty(), "SESSION_NOT_FOUND") { "No such session" }
 
         val now = Instant.now()
         family.forEach { it.revoke(now) }
@@ -79,7 +79,7 @@ class SessionAdminService(
     fun revokeAdminSession(familyId: UUID) {
         platformAccess.require("settings.manage")
         val family = adminTokens.findByFamilyId(familyId)
-        if (family.isEmpty()) throw NotFoundException("SESSION_NOT_FOUND", "No such session")
+        requireFound(family.isNotEmpty(), "SESSION_NOT_FOUND") { "No such session" }
 
         val now = Instant.now()
         family.forEach { it.revoke(now) }

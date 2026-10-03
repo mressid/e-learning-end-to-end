@@ -3,10 +3,10 @@ package com.elearning.learning.application
 import com.elearning.learning.domain.Enrollment
 import com.elearning.learning.domain.EnrollmentStatus
 import com.elearning.learning.infrastructure.EnrollmentRepository
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.ConflictException
-import com.elearning.shared.errors.ForbiddenException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireAllowed
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireNoConflict
+import com.elearning.shared.errors.requireRule
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -23,19 +23,16 @@ class EnrollmentService(
 
     @Transactional
     fun enroll(courseId: UUID, studentId: UUID): Enrollment {
-        if (!catalog.exists(courseId)) {
-            throw NotFoundException("COURSE_NOT_FOUND", "Course not found")
-        }
+        requireFound(catalog.exists(courseId), "COURSE_NOT_FOUND") { "Course not found" }
         // Enrolling in a draft would let a student see unpublished material.
-        if (!catalog.isPublished(courseId)) {
-            throw BusinessRuleException("COURSE_NOT_PUBLISHED", "This course is not open for enrolment")
-        }
+        requireRule(catalog.isPublished(courseId), "COURSE_NOT_PUBLISHED") { "This course is not open for enrolment" }
 
         val existing = enrollments.findByStudentIdAndCourseId(studentId, courseId).orElse(null)
         if (existing != null) {
-            if (existing.status == EnrollmentStatus.ACTIVE || existing.status == EnrollmentStatus.COMPLETED) {
-                throw ConflictException("ALREADY_ENROLLED", "You are already enrolled in this course")
-            }
+            requireNoConflict(
+                existing.status != EnrollmentStatus.ACTIVE && existing.status != EnrollmentStatus.COMPLETED,
+                "ALREADY_ENROLLED",
+            ) { "You are already enrolled in this course" }
             // Re-enrolling resumes the original record so past progress survives,
             // and starts a fresh access window. Without the new window an
             // enrolment that lapsed would come back already expired -
@@ -74,13 +71,13 @@ class EnrollmentService(
 
     @Transactional
     fun cancel(enrollmentId: UUID, studentId: UUID): Enrollment {
-        val enrollment = enrollments.findById(enrollmentId)
-            .orElseThrow { NotFoundException("ENROLLMENT_NOT_FOUND", "Enrolment not found") }
+        val enrollment = requireFound(
+            enrollments.findById(enrollmentId).orElse(null),
+            "ENROLLMENT_NOT_FOUND",
+        ) { "Enrolment not found" }
 
         // An enrolment belongs to exactly one student; nobody else may touch it.
-        if (enrollment.studentId != studentId) {
-            throw ForbiddenException("ENROLLMENT_ACCESS_DENIED", "This enrolment is not yours")
-        }
+        requireAllowed(enrollment.studentId == studentId, "ENROLLMENT_ACCESS_DENIED") { "This enrolment is not yours" }
         enrollment.cancel()
         return enrollment
     }
@@ -98,12 +95,12 @@ class EnrollmentService(
         enrollments.findByStudentIdAndCourseId(studentId, courseId).isPresent
 
     @Transactional(readOnly = true)
-    fun requireActiveEnrollment(courseId: UUID, studentId: UUID): Enrollment =
-        enrollments.findByStudentIdAndCourseId(studentId, courseId)
-            .orElseThrow { ForbiddenException("NOT_ENROLLED", "You are not enrolled in this course") }
-            .also {
-                if (it.isClosed()) {
-                    throw ForbiddenException("ENROLLMENT_NOT_ACTIVE", "This enrolment is no longer active")
-                }
-            }
+    fun requireActiveEnrollment(courseId: UUID, studentId: UUID): Enrollment {
+        val enrollment = requireAllowed(
+            enrollments.findByStudentIdAndCourseId(studentId, courseId).orElse(null),
+            "NOT_ENROLLED",
+        ) { "You are not enrolled in this course" }
+        requireAllowed(!enrollment.isClosed(), "ENROLLMENT_NOT_ACTIVE") { "This enrolment is no longer active" }
+        return enrollment
+    }
 }

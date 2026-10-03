@@ -5,8 +5,8 @@ import com.elearning.platform.media.MediaObjectRepository
 import com.elearning.platform.media.MediaReferenceProbe
 import com.elearning.platform.media.MediaStatus
 import com.elearning.platform.media.ObjectStorage
-import com.elearning.shared.errors.BusinessRuleException
-import com.elearning.shared.errors.NotFoundException
+import com.elearning.shared.errors.requireFound
+import com.elearning.shared.errors.requireRule
 import com.elearning.shared.security.PlatformAccess
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
@@ -50,16 +50,12 @@ class MediaLibraryService(
     @Transactional
     fun delete(mediaId: UUID) {
         platformAccess.require("media.delete")
-        val record = media.findById(mediaId)
-            .orElseThrow { NotFoundException("MEDIA_NOT_FOUND", "No such file") }
+        val record = requireFound(media.findById(mediaId).orElse(null), "MEDIA_NOT_FOUND") { "No such file" }
 
         val holders = probes.filter { it.isReferenced(mediaId) }
-        if (holders.isNotEmpty()) {
-            throw BusinessRuleException(
-                "MEDIA_IN_USE",
-                "Cannot delete: this file is still used as " +
-                    holders.joinToString(" and ") { it.describe() },
-            )
+        requireRule(holders.isEmpty(), "MEDIA_IN_USE") {
+            "Cannot delete: this file is still used as " +
+                holders.joinToString(" and ") { it.describe() }
         }
 
         // The row goes first and the object second. If the storage call fails
