@@ -3,12 +3,15 @@ package com.elearning.shared.errors
 import com.elearning.shared.web.RequestIdFilter
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import org.springframework.context.MessageSource
+import org.springframework.context.NoSuchMessageException
+import org.springframework.context.i18n.LocaleContextHolder
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.AuthenticationException
-import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -22,9 +25,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException
  *
  * Rule: anything not explicitly handled becomes a generic 500 whose body says
  * nothing about the cause. The detail goes to the log, keyed by request id.
+ * Error messages are localized according to the current request locale.
  */
 @RestControllerAdvice
-class GlobalExceptionHandler {
+class GlobalExceptionHandler(
+    private val messageSource: MessageSource,
+) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -32,18 +38,26 @@ class GlobalExceptionHandler {
     fun handleApiException(ex: ApiException): ResponseEntity<ApiError> {
         // Expected, deliberate outcomes: log at debug, not as errors.
         log.debug("{} -> {}", ex.code, ex.message)
-        return respond(ex.status, ex.code, ex.message)
+        val localized = localize(ex.code, ex.message, ex.args)
+        return respond(ex.status, ex.code, localized)
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException): ResponseEntity<ApiError> {
+        val locale = LocaleContextHolder.getLocale()
         val fieldErrors = ex.bindingResult.fieldErrors.map {
-            ApiError.FieldError(it.field, it.defaultMessage ?: "is invalid")
+            val localizedFieldMsg = it.defaultMessage?.let { msg ->
+                it.codes?.firstNotNullOfOrNull { c ->
+                    try { messageSource.getMessage(c, it.arguments, locale) } catch (e: NoSuchMessageException) { null }
+                } ?: msg
+            } ?: "is invalid"
+            ApiError.FieldError(it.field, localizedFieldMsg)
         }
+        val message = localize("VALIDATION_FAILED", "Request validation failed")
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
             ApiError(
                 code = "VALIDATION_FAILED",
-                message = "Request validation failed",
+                message = message,
                 requestId = requestId(),
                 errors = fieldErrors,
             ),
@@ -61,8 +75,9 @@ class GlobalExceptionHandler {
             val name = result.methodParameter.parameterName ?: "parameter"
             result.resolvableErrors.map { ApiError.FieldError(name, it.defaultMessage ?: "is invalid") }
         }
+        val message = localize("VALIDATION_FAILED", "Request validation failed")
         return ResponseEntity.badRequest().body(
-            ApiError("VALIDATION_FAILED", "Request validation failed", requestId(), fieldErrors),
+            ApiError("VALIDATION_FAILED", message, requestId(), fieldErrors),
         )
     }
 
@@ -71,36 +86,48 @@ class GlobalExceptionHandler {
     fun handleUnreadableBody(ex: HttpMessageNotReadableException): ResponseEntity<ApiError> {
         // The parser message can quote the payload, so it is logged, not returned.
         log.debug("Unreadable request body", ex)
-        return respond(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Request body could not be parsed")
+        val message = localize("MALFORMED_REQUEST", "Request body could not be parsed")
+        return respond(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", message)
     }
 
     /** A path variable or query parameter of the wrong type, e.g. a malformed UUID. */
     @ExceptionHandler(MethodArgumentTypeMismatchException::class)
-    fun handleTypeMismatch(ex: MethodArgumentTypeMismatchException): ResponseEntity<ApiError> =
-        ResponseEntity.badRequest().body(
+    fun handleTypeMismatch(ex: MethodArgumentTypeMismatchException): ResponseEntity<ApiError> {
+        val message = localize("INVALID_PARAMETER", "Request parameter is invalid")
+        val fieldMsg = localize("INVALID_VALUE", "has an invalid value")
+        return ResponseEntity.badRequest().body(
             ApiError(
                 "INVALID_PARAMETER",
-                "Request parameter is invalid",
+                message,
                 requestId(),
-                listOf(ApiError.FieldError(ex.name, "has an invalid value")),
+                listOf(ApiError.FieldError(ex.name, fieldMsg)),
             ),
         )
+    }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
-    fun handleMethodNotSupported(ex: HttpRequestMethodNotSupportedException): ResponseEntity<ApiError> =
-        respond(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "That method is not supported on this endpoint")
+    fun handleMethodNotSupported(ex: HttpRequestMethodNotSupportedException): ResponseEntity<ApiError> {
+        val message = localize("METHOD_NOT_ALLOWED", "That method is not supported on this endpoint")
+        return respond(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", message)
+    }
 
     @ExceptionHandler(AuthenticationException::class)
-    fun handleAuthentication(ex: AuthenticationException): ResponseEntity<ApiError> =
-        respond(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication is required")
+    fun handleAuthentication(ex: AuthenticationException): ResponseEntity<ApiError> {
+        val message = localize("UNAUTHORIZED", "Authentication is required")
+        return respond(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", message)
+    }
 
     @ExceptionHandler(AccessDeniedException::class)
-    fun handleAccessDenied(ex: AccessDeniedException): ResponseEntity<ApiError> =
-        respond(HttpStatus.FORBIDDEN, "FORBIDDEN", "You are not allowed to perform this operation")
+    fun handleAccessDenied(ex: AccessDeniedException): ResponseEntity<ApiError> {
+        val message = localize("FORBIDDEN", "You are not allowed to perform this operation")
+        return respond(HttpStatus.FORBIDDEN, "FORBIDDEN", message)
+    }
 
     @ExceptionHandler(NoResourceFoundException::class)
-    fun handleNoResource(ex: NoResourceFoundException): ResponseEntity<ApiError> =
-        respond(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+    fun handleNoResource(ex: NoResourceFoundException): ResponseEntity<ApiError> {
+        val message = localize("NOT_FOUND", "Resource not found")
+        return respond(HttpStatus.NOT_FOUND, "NOT_FOUND", message)
+    }
 
     /**
      * A unique or foreign-key violation that slipped past an application check -
@@ -111,14 +138,26 @@ class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException::class)
     fun handleDataIntegrityViolation(ex: DataIntegrityViolationException): ResponseEntity<ApiError> {
         log.warn("Constraint violation reached the database", ex)
-        return respond(HttpStatus.CONFLICT, "CONSTRAINT_VIOLATION", "The request conflicts with existing data")
+        val message = localize("CONSTRAINT_VIOLATION", "The request conflicts with existing data")
+        return respond(HttpStatus.CONFLICT, "CONSTRAINT_VIOLATION", message)
     }
 
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(ex: Exception): ResponseEntity<ApiError> {
         // The only place the real cause is recorded. Never sent to the client.
         log.error("Unhandled exception", ex)
-        return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "An unexpected error occurred")
+        val message = localize("INTERNAL_ERROR", "An unexpected error occurred")
+        return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", message)
+    }
+
+    private fun localize(code: String, defaultMessage: String, args: Array<out Any> = emptyArray()): String {
+        val locale = LocaleContextHolder.getLocale()
+        return try {
+            val messageArgs = if (args.isNotEmpty()) args else null
+            messageSource.getMessage(code, messageArgs, defaultMessage, locale) ?: defaultMessage
+        } catch (ex: NoSuchMessageException) {
+            defaultMessage
+        }
     }
 
     private fun respond(status: HttpStatus, code: String, message: String) =

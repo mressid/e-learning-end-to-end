@@ -8,22 +8,22 @@ import kotlin.contracts.contract
  * Throws [BusinessRuleException] (HTTP 422) if false.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun requireRule(value: Boolean, code: String, lazyMessage: () -> String) {
+inline fun requireRule(value: Boolean, code: String, vararg args: Any, lazyMessage: () -> String) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw BusinessRuleException(code, lazyMessage())
+        throw BusinessRuleException(code, lazyMessage(), *args)
     }
 }
 
 @OptIn(ExperimentalContracts::class)
-fun requireRule(value: Boolean, code: String, message: String = "") {
+fun requireRule(value: Boolean, code: String, message: String = "", vararg args: Any) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw BusinessRuleException(code, message)
+        throw BusinessRuleException(code, message, *args)
     }
 }
 
@@ -32,19 +32,19 @@ fun requireRule(value: Boolean, code: String, message: String = "") {
  * Throws [BusinessRuleException] (HTTP 422) if null, otherwise returns the non-null value.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun <T : Any> requireRule(value: T?, code: String, lazyMessage: () -> String): T {
+inline fun <T : Any> requireRule(value: T?, code: String, vararg args: Any, lazyMessage: () -> String): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw BusinessRuleException(code, lazyMessage())
+    return value ?: throw BusinessRuleException(code, lazyMessage(), *args)
 }
 
 @OptIn(ExperimentalContracts::class)
-fun <T : Any> requireRule(value: T?, code: String, message: String = ""): T {
+fun <T : Any> requireRule(value: T?, code: String, message: String = "", vararg args: Any): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw BusinessRuleException(code, message)
+    return value ?: throw BusinessRuleException(code, message, *args)
 }
 
 /**
@@ -52,22 +52,22 @@ fun <T : Any> requireRule(value: T?, code: String, message: String = ""): T {
  * Throws [NotFoundException] (HTTP 404) if false.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun requireFound(value: Boolean, code: String, lazyMessage: () -> String) {
+inline fun requireFound(value: Boolean, code: String, vararg args: Any, lazyMessage: () -> String) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw NotFoundException(code, lazyMessage())
+        throw NotFoundException(code, lazyMessage(), *args)
     }
 }
 
 @OptIn(ExperimentalContracts::class)
-fun requireFound(value: Boolean, code: String, message: String = "Resource not found") {
+fun requireFound(value: Boolean, code: String, message: String = "Resource not found", vararg args: Any) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw NotFoundException(code, message)
+        throw NotFoundException(code, message, *args)
     }
 }
 
@@ -76,19 +76,24 @@ fun requireFound(value: Boolean, code: String, message: String = "Resource not f
  * Throws [NotFoundException] (HTTP 404) if null, otherwise returns the non-null value.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun <T : Any> requireFound(value: T?, code: String, lazyMessage: () -> String): T {
+inline fun <T : Any> requireFound(
+    value: T?,
+    code: String,
+    vararg args: Any,
+    lazyMessage: () -> String = { "Resource not found" },
+): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw NotFoundException(code, lazyMessage())
+    return value ?: throw NotFoundException(code, lazyMessage(), *args)
 }
 
 @OptIn(ExperimentalContracts::class)
-fun <T : Any> requireFound(value: T?, code: String, message: String = "Resource not found"): T {
+fun <T : Any> requireFound(value: T?, code: String, message: String = "Resource not found", vararg args: Any): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw NotFoundException(code, message)
+    return value ?: throw NotFoundException(code, message, *args)
 }
 
 /**
@@ -96,22 +101,22 @@ fun <T : Any> requireFound(value: T?, code: String, message: String = "Resource 
  * Throws [ConflictException] (HTTP 409) if false.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun requireNoConflict(value: Boolean, code: String, lazyMessage: () -> String) {
+inline fun requireNoConflict(value: Boolean, code: String, vararg args: Any, lazyMessage: () -> String) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw ConflictException(code, lazyMessage())
+        throw ConflictException(code, lazyMessage(), *args)
     }
 }
 
 @OptIn(ExperimentalContracts::class)
-fun requireNoConflict(value: Boolean, code: String, message: String = "") {
+fun requireNoConflict(value: Boolean, code: String, message: String = "", vararg args: Any) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw ConflictException(code, message)
+        throw ConflictException(code, message, *args)
     }
 }
 
@@ -120,22 +125,22 @@ fun requireNoConflict(value: Boolean, code: String, message: String = "") {
  * Throws [ForbiddenException] (HTTP 403) if false.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun requireAllowed(value: Boolean, code: String, lazyMessage: () -> String) {
+inline fun requireAllowed(value: Boolean, code: String, vararg args: Any, lazyMessage: () -> String) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw ForbiddenException(code, lazyMessage())
+        throw ForbiddenException(code, lazyMessage(), *args)
     }
 }
 
 @OptIn(ExperimentalContracts::class)
-fun requireAllowed(value: Boolean, code: String, message: String = "") {
+fun requireAllowed(value: Boolean, code: String, message: String = "", vararg args: Any) {
     contract {
         returns() implies value
     }
     if (!value) {
-        throw ForbiddenException(code, message)
+        throw ForbiddenException(code, message, *args)
     }
 }
 
@@ -144,17 +149,22 @@ fun requireAllowed(value: Boolean, code: String, message: String = "") {
  * Throws [ForbiddenException] (HTTP 403) if null, otherwise returns the non-null value.
  */
 @OptIn(ExperimentalContracts::class)
-inline fun <T : Any> requireAllowed(value: T?, code: String, lazyMessage: () -> String): T {
+inline fun <T : Any> requireAllowed(
+    value: T?,
+    code: String,
+    vararg args: Any,
+    lazyMessage: () -> String = { "Access denied" },
+): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw ForbiddenException(code, lazyMessage())
+    return value ?: throw ForbiddenException(code, lazyMessage(), *args)
 }
 
 @OptIn(ExperimentalContracts::class)
-fun <T : Any> requireAllowed(value: T?, code: String, message: String = "Access denied"): T {
+fun <T : Any> requireAllowed(value: T?, code: String, message: String = "Access denied", vararg args: Any): T {
     contract {
         returns() implies (value != null)
     }
-    return value ?: throw ForbiddenException(code, message)
+    return value ?: throw ForbiddenException(code, message, *args)
 }

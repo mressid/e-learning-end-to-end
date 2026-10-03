@@ -9,6 +9,11 @@ spring:
   profiles:
     default: dev
 
+  messages:
+    basename: i18n/messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}

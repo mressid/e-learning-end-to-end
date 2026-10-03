@@ -12,21 +12,34 @@ open class ApiException(
     val code: String,
     val status: HttpStatus,
     override val message: String,
+    val args: Array<out Any> = emptyArray(),
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 
 /** The requested resource does not exist, or the caller may not know that it does. */
-class NotFoundException(code: String, message: String) :
-    ApiException(code, HttpStatus.NOT_FOUND, message)
+class NotFoundException(
+    code: String,
+    message: String,
+    vararg args: Any,
+) : ApiException(code, HttpStatus.NOT_FOUND, message, args)
 
 /** The request conflicts with current state, e.g. a duplicate enrollment. */
-class ConflictException(code: String, message: String) :
-    ApiException(code, HttpStatus.CONFLICT, message)
+class ConflictException(
+    code: String,
+    message: String,
+    vararg args: Any,
+) : ApiException(code, HttpStatus.CONFLICT, message, args)
 
 /** The caller is authenticated but not allowed to act on this specific resource. */
-class ForbiddenException(code: String, message: String) :
-    ApiException(code, HttpStatus.FORBIDDEN, message)
+class ForbiddenException(
+    code: String,
+    message: String,
+    vararg args: Any,
+) : ApiException(code, HttpStatus.FORBIDDEN, message, args)
 
 /** The request is well-formed but violates a business rule. */
-class BusinessRuleException(code: String, message: String) :
-    ApiException(code, HttpStatus.UNPROCESSABLE_ENTITY, message)
+class BusinessRuleException(
+    code: String,
+    message: String,
+    vararg args: Any,
+) : ApiException(code, HttpStatus.UNPROCESSABLE_ENTITY, message, args)
